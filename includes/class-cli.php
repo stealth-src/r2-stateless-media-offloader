@@ -122,7 +122,9 @@ class CLI {
 		$dry_run  = ! empty( $assoc_args['dry-run'] );
 		$verify   = ! empty( $assoc_args['verify'] );
 
-		if ( ! $dry_run && ! $settings->is_configured() ) {
+		// Dry-run without verify is the only mode that doesn't touch R2.
+		$needs_r2 = ! $dry_run || $verify;
+		if ( $needs_r2 && ! $settings->is_configured() ) {
 			\WP_CLI::error( 'R2 not configured. Set R2OFFLOAD_* constants in wp-config.php or via settings.' );
 		}
 

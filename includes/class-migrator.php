@@ -300,11 +300,13 @@ class Migrator {
 				$result['errors'][] = sprintf( '%s: %s', $key, $downloaded->get_error_message() );
 				return;
 			}
-			$tmp        = $downloaded;
+			$tmp        = (string) $downloaded;
 			$local_path = $tmp;
 		}
 
-		$size_bytes = (int) @filesize( $local_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		// $local_path is readable at this point (either checked via is_readable()
+		// for the local case or by download_to_tempfile() for the remote case).
+		$size_bytes = (int) filesize( $local_path );
 		$headers    = array();
 		$cc         = $this->settings->get( 'cache_control' );
 		if ( '' !== $cc ) {
@@ -348,8 +350,8 @@ class Migrator {
 	 */
 	private function measure_source( $attachment_id, $size, array $item, $local, $has_local, array &$result, $key ) {
 		if ( $has_local ) {
-			$fs = @filesize( $local ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			return false === $fs ? 0 : (int) $fs;
+			$bytes = filesize( $local ); // Caller has already checked is_readable().
+			return false === $bytes ? 0 : (int) $bytes;
 		}
 		$url = $this->url_for( $attachment_id, $size, $item );
 		if ( '' === $url ) {
