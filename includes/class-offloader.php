@@ -85,6 +85,8 @@ class Offloader {
 			}
 		}
 
+		$already_synced = (bool) get_post_meta( $attachment_id, Settings::META_SYNCED, true );
+
 		// Only mark the attachment offloaded once the ORIGINAL and every size
 		// are in R2 — a stray size upload (or a skipped, missing variant) must
 		// not flag media that isn't fully present.
@@ -94,14 +96,18 @@ class Offloader {
 			// Store the original's actual R2 key so readers resolve it
 			// independently of the current path_prefix setting.
 			update_post_meta( $attachment_id, Settings::META_KEY, $original_key );
+		}
 
-			// Stateless mode: now that every file is safely in R2, drop the
-			// local copies we actually uploaded (never anything we skipped).
-			if ( 'stateless' === $this->settings->get( 'mode' ) ) {
-				foreach ( $uploaded_paths as $local_path ) {
-					if ( file_exists( $local_path ) ) {
-						wp_delete_file( $local_path );
-					}
+		// Stateless mode: drop the local copies we just uploaded — each is
+		// confirmed in R2. Gate on the attachment being served from R2 (synced
+		// now or already), NOT on $all_present: on a re-offload (e.g. thumbnail
+		// regeneration) the original lives only in R2, so $all_present is false,
+		// but newly generated size files must still be cleaned up. Never strip
+		// locals for media that isn't synced — it's still served from disk.
+		if ( 'stateless' === $this->settings->get( 'mode' ) && ( ( $original_uploaded && $all_present ) || $already_synced ) ) {
+			foreach ( $uploaded_paths as $local_path ) {
+				if ( file_exists( $local_path ) ) {
+					wp_delete_file( $local_path );
 				}
 			}
 		}
