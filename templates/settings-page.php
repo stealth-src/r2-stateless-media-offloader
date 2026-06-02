@@ -13,6 +13,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+namespace R2Offload;
+
 /** @var Settings $settings */
 /** @var array $stored */
 /** @var bool $delete_on_attachment_delete */
@@ -23,10 +25,10 @@ $r2_docs_url = 'https://developers.cloudflare.com/r2/api/s3/tokens/';
 <div class="wrap">
 	<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
 
-	<?php settings_errors( Admin_Settings::PAGE_SLUG ); ?>
+	<?php settings_errors( \R2Offload\Admin_Settings::PAGE_SLUG ); ?>
 
 	<form method="post" action="">
-		<?php wp_nonce_field( Admin_Settings::NONCE_ACTION, Admin_Settings::NONCE_FIELD ); ?>
+		<?php wp_nonce_field( \R2Offload\Admin_Settings::NONCE_ACTION, \R2Offload\Admin_Settings::NONCE_FIELD ); ?>
 
 		<h2 class="title"><?php esc_html_e( 'R2 Credentials', 'r2-stateless-media-offload' ); ?></h2>
 		<p class="description">
