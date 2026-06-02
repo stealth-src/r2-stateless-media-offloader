@@ -53,10 +53,11 @@ final class Plugin {
 		// Serve offloaded media from R2 / the custom domain (render-time).
 		( new URL_Rewriter( $this->client, $this->settings ) )->register();
 
+		// Stateless read path: restore files from R2 on demand for image ops.
+		( new Local_Fallback( $this->client, $this->settings ) )->register();
+
 		// WP-CLI commands (loads its own guard).
 		require_once R2OFFLOAD_PLUGIN_DIR . 'includes/class-cli.php';
-
-		// Stream wrapper (307) is wired in later.
 	}
 
 	/**

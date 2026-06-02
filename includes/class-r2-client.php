@@ -174,6 +174,39 @@ class R2_Client {
 	}
 
 	/**
+	 * Download an object from R2 to a local file (authenticated GET).
+	 *
+	 * Works against a private bucket regardless of custom-domain setup. Reads
+	 * the body into memory then writes it — fine for images; large media would
+	 * want a streamed/range download (future).
+	 *
+	 * @param string $key
+	 * @param string $local_path Destination path (parent dir created if needed).
+	 * @return true|\WP_Error
+	 */
+	public function download_object( $key, $local_path ) {
+		$response = $this->request( 'GET', '/' . ltrim( $key, '/' ) );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code > 299 ) {
+			return new \WP_Error( 'r2offload_download_failed', sprintf( /* translators: %d: HTTP status */ __( 'Download failed HTTP %d', 'r2-stateless-media-offload' ), $code ) );
+		}
+
+		$dir = dirname( $local_path );
+		if ( ! is_dir( $dir ) ) {
+			wp_mkdir_p( $dir );
+		}
+
+		$bytes = file_put_contents( $local_path, wp_remote_retrieve_body( $response ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		if ( false === $bytes ) {
+			return new \WP_Error( 'r2offload_write_failed', __( 'Could not write downloaded object to disk.', 'r2-stateless-media-offload' ) );
+		}
+		return true;
+	}
+
+	/**
 	 * Public URL for an object — custom domain if set, else R2 endpoint.
 	 *
 	 * @param string $key
