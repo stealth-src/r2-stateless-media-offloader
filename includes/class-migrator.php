@@ -464,9 +464,14 @@ class Migrator {
 		// Suppress our own URL rewriter so we resolve the attachment's *source*
 		// URL (local / GCS / S3), not an R2 URL that may not exist yet. Other
 		// plugins' filters (e.g. wp-stateless serving from GCS) still apply.
+		// try/finally so a throwing filter can't strand the suppress counter and
+		// leave rewriting disabled for the rest of the request.
 		URL_Rewriter::suppress( true );
-		$base = wp_get_attachment_url( $attachment_id );
-		URL_Rewriter::suppress( false );
+		try {
+			$base = wp_get_attachment_url( $attachment_id );
+		} finally {
+			URL_Rewriter::suppress( false );
+		}
 		if ( ! is_string( $base ) || '' === $base ) {
 			return '';
 		}

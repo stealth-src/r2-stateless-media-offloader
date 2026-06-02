@@ -83,17 +83,27 @@ class R2_Client {
 		// OOM-kill the process mid-upload. Filterable for hosts with more
 		// headroom.
 		$max_bytes = (int) apply_filters( 'r2offload_max_upload_bytes', 50 * 1024 * 1024, $local_path, $key );
-		$size      = filesize( $local_path );
-		if ( false !== $size && $max_bytes > 0 && $size > $max_bytes ) {
-			return new \WP_Error(
-				'r2offload_file_too_large',
-				sprintf(
-					/* translators: 1: file size in bytes, 2: limit in bytes */
-					__( 'File is %1$d bytes, above the in-memory upload limit of %2$d bytes. Increase the r2offload_max_upload_bytes filter once multipart streaming is available, or exclude this file.', 'r2-stateless-media-offload' ),
-					(int) $size,
-					$max_bytes
-				)
-			);
+		if ( $max_bytes > 0 ) {
+			$size = filesize( $local_path );
+			if ( false === $size ) {
+				// Can't determine the size, so can't guarantee it's under the
+				// cap — refuse rather than risk an unbounded in-memory read.
+				return new \WP_Error(
+					'r2offload_filesize_unknown',
+					__( 'Unable to determine file size to enforce the upload limit.', 'r2-stateless-media-offload' )
+				);
+			}
+			if ( $size > $max_bytes ) {
+				return new \WP_Error(
+					'r2offload_file_too_large',
+					sprintf(
+						/* translators: 1: file size in bytes, 2: limit in bytes */
+						__( 'File is %1$d bytes, above the in-memory upload limit of %2$d bytes. Increase the r2offload_max_upload_bytes filter once multipart streaming is available, or exclude this file.', 'r2-stateless-media-offload' ),
+						(int) $size,
+						$max_bytes
+					)
+				);
+			}
 		}
 
 		$body = file_get_contents( $local_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
@@ -166,6 +176,22 @@ class R2_Client {
 		$response = $this->request( 'GET', '/', $params );
 		if ( is_wp_error( $response ) ) {
 			return $response;
+		}
+
+		// R2 error responses (bad credentials, missing bucket, denied) are
+		// valid S3-format XML with <Error> instead of <Contents>; without this
+		// check they'd parse cleanly and return an empty list as if successful.
+		$code = wp_remote_retrieve_response_code( $response );
+		if ( 200 !== (int) $code ) {
+			return new \WP_Error(
+				'r2offload_list_failed',
+				sprintf(
+					/* translators: 1: HTTP status, 2: response body */
+					__( 'R2 returned HTTP %1$d: %2$s', 'r2-stateless-media-offload' ),
+					(int) $code,
+					wp_strip_all_tags( wp_remote_retrieve_body( $response ) )
+				)
+			);
 		}
 
 		// LIBXML_NONET blocks network access during parse; defence-in-depth
