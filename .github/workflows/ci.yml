@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint:
+    name: PHP Lint + Coding Standards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          tools: composer, phpcs
+
+      - name: PHP syntax check
+        run: find . -name "*.php" -not -path "./vendor/*" -print0 | xargs -0 -n1 -P4 php -l
+
+      - name: WordPress Coding Standards
+        run: |
+          composer global require wp-coding-standards/wpcs:^3 dealerdirect/phpcodesniffer-composer-installer --no-interaction || true
+          ~/.composer/vendor/bin/phpcs --standard=WordPress --extensions=php --ignore=vendor/* . || true
+
+  security:
+    name: Semgrep (PHP security)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/php
+            p/security-audit
+        continue-on-error: true
