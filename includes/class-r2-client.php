@@ -76,8 +76,26 @@ class R2_Client {
 			return new \WP_Error( 'r2offload_file_unreadable', __( 'Local file not readable.', 'r2-stateless-media-offload' ) );
 		}
 
-		// NOTE: reads the whole file into memory. Fine for images; multipart
-		// streaming for large files (video) is tracked as a follow-up.
+		// NOTE: reads the whole file into memory — the WordPress HTTP API has no
+		// streaming PUT. Fine for images; chunked multipart upload for large
+		// files (video) is tracked as a follow-up. Until then, refuse files past
+		// a safe cap so a single large object can't exhaust the PHP heap and
+		// OOM-kill the process mid-upload. Filterable for hosts with more
+		// headroom.
+		$max_bytes = (int) apply_filters( 'r2offload_max_upload_bytes', 50 * 1024 * 1024, $local_path, $key );
+		$size      = filesize( $local_path );
+		if ( false !== $size && $max_bytes > 0 && $size > $max_bytes ) {
+			return new \WP_Error(
+				'r2offload_file_too_large',
+				sprintf(
+					/* translators: 1: file size in bytes, 2: limit in bytes */
+					__( 'File is %1$d bytes, above the in-memory upload limit of %2$d bytes. Increase the r2offload_max_upload_bytes filter once multipart streaming is available, or exclude this file.', 'r2-stateless-media-offload' ),
+					(int) $size,
+					$max_bytes
+				)
+			);
+		}
+
 		$body = file_get_contents( $local_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		if ( false === $body ) {
 			return new \WP_Error( 'r2offload_file_read_failed', __( 'Unable to read local file.', 'r2-stateless-media-offload' ) );

@@ -62,12 +62,16 @@ class Offloader {
 
 		$cache_control = $this->settings->get( 'cache_control' );
 		$headers       = ( '' !== $cache_control ) ? array( 'Cache-Control' => $cache_control ) : array();
-		$uploaded      = 0;
 		$uploaded_paths   = array();
 		$original_uploaded = false;
+		$all_present       = true;
 
 		foreach ( $files as $local_path => $key ) {
 			if ( ! is_readable( $local_path ) ) {
+				// A size file is missing locally (e.g. another stateless plugin
+				// already removed it). Don't claim the attachment is fully
+				// offloaded — the URL rewriter would 404 on that size.
+				$all_present = false;
 				continue;
 			}
 			$result = $this->client->upload_file( $local_path, $key, '', $headers );
@@ -75,16 +79,16 @@ class Offloader {
 				// Leave local copies in place if any upload fails — never strand media.
 				return $metadata;
 			}
-			++$uploaded;
 			$uploaded_paths[] = $local_path;
 			if ( $key === $original_key ) {
 				$original_uploaded = true;
 			}
 		}
 
-		// Only mark the attachment offloaded once the ORIGINAL is in R2 — a
-		// stray size upload must not flag media that isn't fully present.
-		if ( $original_uploaded ) {
+		// Only mark the attachment offloaded once the ORIGINAL and every size
+		// are in R2 — a stray size upload (or a skipped, missing variant) must
+		// not flag media that isn't fully present.
+		if ( $original_uploaded && $all_present ) {
 			update_post_meta( $attachment_id, '_r2offload_synced', 1 );
 			update_post_meta( $attachment_id, '_r2offload_synced_at', time() );
 			// Store the original's actual R2 key so readers resolve it

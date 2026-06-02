@@ -19,6 +19,8 @@ class Migration_Runner {
 	const STATE_OPTION = 'r2offload_migration';
 	const CRON_HOOK    = 'r2offload_migrate_tick';
 	const BATCH        = 100;
+	const LOCK_OPTION  = 'r2offload_migration_lock';
+	const LOCK_TTL     = 120; // Seconds before a held lock is treated as stale.
 
 	/** @var Settings */
 	private $settings;
@@ -98,6 +100,7 @@ class Migration_Runner {
 		$state['running'] = false;
 		update_option( self::STATE_OPTION, $state, false );
 		$this->clear_scheduled();
+		$this->release_lock();
 		return $state;
 	}
 
@@ -114,11 +117,11 @@ class Migration_Runner {
 		}
 
 		// Mutex so the cron tick and the status poll can't process the same
-		// cursor concurrently. If another worker holds it, just report state.
-		if ( get_transient( 'r2offload_migration_lock' ) ) {
+		// cursor concurrently. acquire_lock() is atomic, so only one worker
+		// wins; the rest just report current state.
+		if ( ! $this->acquire_lock() ) {
 			return $state;
 		}
-		set_transient( 'r2offload_migration_lock', 1, 2 * MINUTE_IN_SECONDS );
 
 		$migrator = new Migrator( null, $this->settings );
 		$migrator->set_dry_run( 'dry-run' === $state['mode'] )
@@ -141,14 +144,48 @@ class Migration_Runner {
 			$state['finished_at'] = time();
 			update_option( self::STATE_OPTION, $state, false );
 			$this->clear_scheduled();
-			delete_transient( 'r2offload_migration_lock' );
+			$this->release_lock();
 			return $state;
 		}
 
 		update_option( self::STATE_OPTION, $state, false );
 		$this->schedule_next();
-		delete_transient( 'r2offload_migration_lock' );
+		$this->release_lock();
 		return $state;
+	}
+
+	/**
+	 * Atomically acquire the batch lock.
+	 *
+	 * add_option() performs a single INSERT guarded by the unique index on
+	 * option_name, so concurrent callers can't both succeed — unlike a
+	 * get/set transient pair, which races. A stale lock left by a crashed
+	 * worker (older than LOCK_TTL) is reclaimed.
+	 *
+	 * @return bool True if this caller now holds the lock.
+	 */
+	private function acquire_lock() {
+		$now = time();
+		// Non-autoloaded so the lock never rides along in the options cache.
+		if ( add_option( self::LOCK_OPTION, $now, '', false ) ) {
+			return true;
+		}
+		$held = (int) get_option( self::LOCK_OPTION, 0 );
+		if ( $held > 0 && ( $now - $held ) > self::LOCK_TTL ) {
+			// Reclaim a stale lock. The residual race window only opens after a
+			// worker has crashed and >LOCK_TTL has passed, so duplicate work is
+			// at worst harmless (already-uploaded objects are skipped).
+			update_option( self::LOCK_OPTION, $now, false );
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Release the batch lock.
+	 */
+	private function release_lock() {
+		delete_option( self::LOCK_OPTION );
 	}
 
 	/**

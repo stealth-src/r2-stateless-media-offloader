@@ -33,6 +33,39 @@ class URL_Rewriter {
 	private $key_cache = array();
 
 	/**
+	 * Re-entrant suppression depth. While > 0 the render-time filters pass
+	 * URLs through untouched. The migrator uses this to resolve an
+	 * attachment's *source* URL (local / GCS / S3) without our own rewrite
+	 * short-circuiting it to a not-yet-existing R2 object.
+	 *
+	 * @var int
+	 */
+	private static $suppress = 0;
+
+	/**
+	 * Toggle URL rewriting off (true) or back on (false). Calls nest, so a
+	 * caller must pair every suppress( true ) with a suppress( false ).
+	 *
+	 * @param bool $on
+	 */
+	public static function suppress( $on ) {
+		if ( $on ) {
+			++self::$suppress;
+		} elseif ( self::$suppress > 0 ) {
+			--self::$suppress;
+		}
+	}
+
+	/**
+	 * Whether rewriting is currently suppressed.
+	 *
+	 * @return bool
+	 */
+	private static function is_suppressed() {
+		return self::$suppress > 0;
+	}
+
+	/**
 	 * @param R2_Client $client
 	 * @param Settings  $settings
 	 */
@@ -58,6 +91,9 @@ class URL_Rewriter {
 	 * @return string
 	 */
 	public function filter_attachment_url( $url, $attachment_id ) {
+		if ( self::is_suppressed() ) {
+			return $url;
+		}
 		$key = $this->original_key( (int) $attachment_id );
 		if ( false === $key ) {
 			return $url;
@@ -75,7 +111,7 @@ class URL_Rewriter {
 	 * @return array|false
 	 */
 	public function filter_image_src( $image, $attachment_id, $size, $icon ) {
-		if ( ! is_array( $image ) || empty( $image[0] ) ) {
+		if ( self::is_suppressed() || ! is_array( $image ) || empty( $image[0] ) ) {
 			return $image;
 		}
 		$rewritten = $this->rewrite_same_dir( (int) $attachment_id, $image[0] );
@@ -96,7 +132,7 @@ class URL_Rewriter {
 	 * @return array
 	 */
 	public function filter_srcset( $sources, $size_array, $image_src, $image_meta, $attachment_id ) {
-		if ( ! is_array( $sources ) ) {
+		if ( self::is_suppressed() || ! is_array( $sources ) ) {
 			return $sources;
 		}
 		$attachment_id = (int) $attachment_id;

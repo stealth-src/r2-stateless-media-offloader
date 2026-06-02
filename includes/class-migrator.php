@@ -461,7 +461,12 @@ class Migrator {
 	 * @return string URL or '' if none derivable.
 	 */
 	private function url_for( $attachment_id, $size, array $item ) {
+		// Suppress our own URL rewriter so we resolve the attachment's *source*
+		// URL (local / GCS / S3), not an R2 URL that may not exist yet. Other
+		// plugins' filters (e.g. wp-stateless serving from GCS) still apply.
+		URL_Rewriter::suppress( true );
 		$base = wp_get_attachment_url( $attachment_id );
+		URL_Rewriter::suppress( false );
 		if ( ! is_string( $base ) || '' === $base ) {
 			return '';
 		}
