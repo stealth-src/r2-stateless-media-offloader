@@ -104,7 +104,16 @@ class Offloader {
 		// regeneration) the original lives only in R2, so $all_present is false,
 		// but newly generated size files must still be cleaned up. Never strip
 		// locals for media that isn't synced — it's still served from disk.
-		if ( 'stateless' === $this->settings->get( 'mode' ) && ( ( $original_uploaded && $all_present ) || $already_synced ) ) {
+		//
+		// Also require a public serving URL: without a custom domain the URL
+		// rewriter stays off and WordPress emits local /uploads URLs, so
+		// deleting the local files would 404 the media. Keep the local copies
+		// (CDN-like) until a custom domain is configured.
+		if (
+			'stateless' === $this->settings->get( 'mode' )
+			&& $this->settings->serves_public_url()
+			&& ( ( $original_uploaded && $all_present ) || $already_synced )
+		) {
 			foreach ( $uploaded_paths as $local_path ) {
 				if ( file_exists( $local_path ) ) {
 					wp_delete_file( $local_path );

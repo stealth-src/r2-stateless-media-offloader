@@ -24,6 +24,9 @@ class Migration_Runner {
 	// persistently-throwing batch (e.g. corrupt metadata) can't spin the cron
 	// forever. Reset to zero on any batch that completes.
 	const MAX_FAIL_STREAK = 5;
+	// How many times the post-batch persist re-reads and retries its CAS when a
+	// concurrent stop()/start() write keeps winning the race.
+	const PERSIST_RETRIES = 5;
 	// Long enough that a healthy batch (up to BATCH items, each able to block
 	// on a remote download) is never mistaken for a crashed worker; the
 	// compare-and-swap in acquire_lock() is the actual correctness guarantee,
@@ -207,62 +210,60 @@ class Migration_Runner {
 				$result              = array( 'done' => false );
 			}
 
-			// Re-read the control plane after the (potentially slow) batch. Bust
-			// the options cache first so we see writes made by stop()/start() in
-			// other processes, not this request's stale copy. We keep the RAW
-			// stored value too, so the persist below can be a true compare-and-
-			// swap: if start()/stop() writes between this read and our write, the
-			// CAS fails and we discard our stale progress rather than reviving a
-			// stopped run or wiping a fresh restart.
-			wp_cache_delete( self::STATE_OPTION, 'options' );
-			$expected_raw = get_option( self::STATE_OPTION, array() );
-			$current      = array_merge( self::default_state(), is_array( $expected_raw ) ? $expected_raw : array() );
-			if ( (string) $current['run_id'] !== $run_id ) {
-				// A different run owns the state now — discard our writes entirely.
-				return $current;
-			}
+			// Reconcile-and-persist. A concurrent stop()/start() can change the
+			// state option between our read and our write. We re-read fresh
+			// (cache-busted, so cross-process writes are visible) and CAS on the
+			// exact observed value; on contention we retry rather than drop the
+			// cursor we actually advanced this batch. This both honours the
+			// latest control-plane decision AND preserves real progress — e.g. a
+			// stop() that races our save no longer discards a migrated batch.
+			for ( $attempt = 0; $attempt < self::PERSIST_RETRIES; $attempt++ ) {
+				wp_cache_delete( self::STATE_OPTION, 'options' );
+				$expected_raw = get_option( self::STATE_OPTION, array() );
+				$current      = array_merge( self::default_state(), is_array( $expected_raw ) ? $expected_raw : array() );
 
-			if ( empty( $current['running'] ) ) {
-				// stop() landed mid-batch. Persist the progress we made so the
-				// job can resume, but honour the stop: stay stopped, don't
-				// reschedule.
-				$state['running'] = false;
-				if ( $this->cas_state( $expected_raw, $state ) ) {
-					$this->clear_scheduled();
+				if ( (string) $current['run_id'] !== $run_id ) {
+					// A different run owns the state now — our progress is moot.
+					return $current;
 				}
-				return $this->state();
-			}
 
-			// Circuit breaker: too many consecutive whole-batch failures means
-			// the batch can't make progress (e.g. corrupt metadata at the
-			// cursor). Abort the run instead of rescheduling another doomed tick.
-			if ( (int) $state['fail_streak'] >= self::MAX_FAIL_STREAK ) {
-				$state['running']     = false;
-				$state['finished_at'] = time();
-				$state['last_error']  = sprintf(
-					/* translators: 1: number of failures, 2: last error message */
-					__( 'Migration aborted after %1$d consecutive batch failures. Last error: %2$s', 'r2-stateless-media-offload' ),
-					(int) $state['fail_streak'],
-					(string) $state['last_error']
-				);
-				if ( $this->cas_state( $expected_raw, $state ) ) {
-					$this->clear_scheduled();
+				// Carry this batch's progress onto the freshest control state.
+				$next         = $state;
+				$reschedule   = false;
+
+				if ( empty( $current['running'] ) ) {
+					// stop() landed: keep our progress for resume, stay stopped.
+					$next['running'] = false;
+				} elseif ( (int) $state['fail_streak'] >= self::MAX_FAIL_STREAK ) {
+					// Circuit breaker: repeated whole-batch failures (e.g. corrupt
+					// metadata at the cursor) — abort instead of looping forever.
+					$next['running']     = false;
+					$next['finished_at'] = time();
+					$next['last_error']  = sprintf(
+						/* translators: 1: number of failures, 2: last error message */
+						__( 'Migration aborted after %1$d consecutive batch failures. Last error: %2$s', 'r2-stateless-media-offload' ),
+						(int) $state['fail_streak'],
+						(string) $state['last_error']
+					);
+				} elseif ( ! empty( $result['done'] ) ) {
+					$next['running']     = false;
+					$next['finished_at'] = time();
+				} else {
+					$reschedule = true;
 				}
-				return $this->state();
-			}
 
-			if ( ! empty( $result['done'] ) ) {
-				$state['running']     = false;
-				$state['finished_at'] = time();
-				if ( $this->cas_state( $expected_raw, $state ) ) {
-					$this->clear_scheduled();
+				if ( $this->cas_state( $expected_raw, $next ) ) {
+					if ( $reschedule ) {
+						$this->schedule_next();
+					} else {
+						$this->clear_scheduled();
+					}
+					return $next;
 				}
-				return $this->state();
+				// CAS lost to a concurrent write — re-read and reconcile again.
 			}
 
-			if ( $this->cas_state( $expected_raw, $state ) ) {
-				$this->schedule_next();
-			}
+			// Exhausted retries under sustained contention; report current state.
 			return $this->state();
 		} finally {
 			$this->release_lock();
