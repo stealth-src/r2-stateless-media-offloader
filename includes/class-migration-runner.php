@@ -20,10 +20,22 @@ class Migration_Runner {
 	const CRON_HOOK    = 'r2offload_migrate_tick';
 	const BATCH        = 100;
 	const LOCK_OPTION  = 'r2offload_migration_lock';
-	const LOCK_TTL     = 120; // Seconds before a held lock is treated as stale.
+	// Long enough that a healthy batch (up to BATCH items, each able to block
+	// on a remote download) is never mistaken for a crashed worker; the
+	// compare-and-swap in acquire_lock() is the actual correctness guarantee,
+	// this only bounds how long a genuinely dead lock blocks progress.
+	const LOCK_TTL     = 1800;
 
 	/** @var Settings */
 	private $settings;
+
+	/**
+	 * The exact lock value this instance holds, so it only ever releases or
+	 * reclaims its own lock. Empty when no lock is held.
+	 *
+	 * @var string
+	 */
+	private $lock_value = '';
 
 	/**
 	 * @param Settings $settings
@@ -157,35 +169,86 @@ class Migration_Runner {
 	/**
 	 * Atomically acquire the batch lock.
 	 *
-	 * add_option() performs a single INSERT guarded by the unique index on
-	 * option_name, so concurrent callers can't both succeed — unlike a
-	 * get/set transient pair, which races. A stale lock left by a crashed
-	 * worker (older than LOCK_TTL) is reclaimed.
+	 * Two independent callers can contend: the background cron tick and the
+	 * admin status poll. The lock value is `{owner-token}|{expires-at}`:
+	 *
+	 *  - First acquire uses add_option(), a single INSERT guarded by the unique
+	 *    index on option_name, so only one caller can create the row.
+	 *  - Reclaiming an expired lock uses a compare-and-swap UPDATE keyed on the
+	 *    exact value observed, so when several callers all see the same stale
+	 *    lock, only the first UPDATE matches — the rest find the value already
+	 *    changed and back off. No blind update_option() that all of them win.
+	 *
+	 * release_lock() and the reclaim both key on this instance's own value, so
+	 * a worker can never delete or steal a lock another worker still holds.
 	 *
 	 * @return bool True if this caller now holds the lock.
 	 */
 	private function acquire_lock() {
-		$now = time();
+		global $wpdb;
+
+		$now   = time();
+		$value = $this->new_lock_value( $now );
+
 		// Non-autoloaded so the lock never rides along in the options cache.
-		if ( add_option( self::LOCK_OPTION, $now, '', false ) ) {
+		if ( add_option( self::LOCK_OPTION, $value, '', false ) ) {
+			$this->lock_value = $value;
 			return true;
 		}
-		$held = (int) get_option( self::LOCK_OPTION, 0 );
-		if ( $held > 0 && ( $now - $held ) > self::LOCK_TTL ) {
-			// Reclaim a stale lock. The residual race window only opens after a
-			// worker has crashed and >LOCK_TTL has passed, so duplicate work is
-			// at worst harmless (already-uploaded objects are skipped).
-			update_option( self::LOCK_OPTION, $now, false );
+
+		$current = (string) get_option( self::LOCK_OPTION, '' );
+		$parts   = explode( '|', $current );
+		$expires = isset( $parts[1] ) ? (int) $parts[1] : 0;
+		if ( $expires > $now ) {
+			return false; // Still held by a live worker.
+		}
+
+		// Expired — reclaim via compare-and-swap; exactly one racer can win.
+		$swapped = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
+				$value,
+				self::LOCK_OPTION,
+				$current
+			)
+		);
+		if ( 1 === (int) $swapped ) {
+			wp_cache_delete( self::LOCK_OPTION, 'options' );
+			$this->lock_value = $value;
 			return true;
 		}
 		return false;
 	}
 
 	/**
-	 * Release the batch lock.
+	 * Release the batch lock, but only if this instance still owns it.
 	 */
 	private function release_lock() {
-		delete_option( self::LOCK_OPTION );
+		global $wpdb;
+
+		if ( '' === $this->lock_value ) {
+			return;
+		}
+		$wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+				self::LOCK_OPTION,
+				$this->lock_value
+			)
+		);
+		wp_cache_delete( self::LOCK_OPTION, 'options' );
+		$this->lock_value = '';
+	}
+
+	/**
+	 * Build a fresh lock value: a unique owner token plus an expiry timestamp.
+	 *
+	 * @param int $now Current Unix time.
+	 * @return string
+	 */
+	private function new_lock_value( $now ) {
+		$token = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( '', true );
+		return $token . '|' . ( $now + self::LOCK_TTL );
 	}
 
 	/**
