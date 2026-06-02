@@ -47,7 +47,7 @@ class Migrator {
 	 * @param R2_Client|null $client
 	 * @param Settings|null  $settings
 	 */
-	public function __construct( R2_Client $client = null, Settings $settings = null ) {
+	public function __construct( ?R2_Client $client = null, ?Settings $settings = null ) {
 		$this->client   = $client ? $client : Plugin::instance()->client();
 		$this->settings = $settings ? $settings : Plugin::instance()->settings();
 	}
@@ -124,7 +124,12 @@ class Migrator {
 			&& ( $result['uploaded'] + $result['skipped'] ) > 0
 		) {
 			update_post_meta( $attachment_id, self::META_SYNCED, 1 );
-			update_post_meta( $attachment_id, self::META_SYNCED_AT, time() );
+			// Preserve the original first-sync timestamp on re-runs that find
+			// every item already present in R2.
+			$first_synced_at = get_post_meta( $attachment_id, self::META_SYNCED_AT, true );
+			if ( '' === (string) $first_synced_at ) {
+				update_post_meta( $attachment_id, self::META_SYNCED_AT, time() );
+			}
 		}
 
 		return $result;
@@ -149,6 +154,7 @@ class Migrator {
 			$wpdb->prepare(
 				"SELECT ID FROM {$wpdb->posts}
 					WHERE post_type = 'attachment'
+					AND post_status != 'trash'
 					AND ID > %d
 					ORDER BY ID ASC
 					LIMIT %d",

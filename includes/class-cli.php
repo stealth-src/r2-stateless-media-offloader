@@ -137,15 +137,14 @@ class CLI {
 		\WP_CLI::log( sprintf( 'Mode: %s   Batch size: %d', $mode, $batch ) );
 		\WP_CLI::log( '' );
 
-		$cursor  = '';
-		$totals  = array(
+		$cursor = '';
+		$totals = array(
 			'processed' => 0,
 			'uploaded'  => 0,
 			'skipped'   => 0,
 			'bytes'     => 0,
 			'errors'    => 0,
 		);
-		$samples = array();
 
 		do {
 			$result = $migrator->migrate_batch( $batch, $cursor );
@@ -157,9 +156,6 @@ class CLI {
 			$totals['errors']    += count( $result['errors'] );
 
 			foreach ( $result['errors'] as $err ) {
-				if ( count( $samples ) < 20 ) {
-					$samples[] = $err;
-				}
 				\WP_CLI::warning( $err );
 			}
 
