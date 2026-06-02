@@ -60,6 +60,7 @@ class Migration_Runner {
 		return array(
 			'running'     => false,
 			'mode'        => 'upload', // upload | dry-run | verify
+			'run_id'      => '',       // Identifies the active run (see run_one_batch).
 			'cursor'      => '',
 			'processed'   => 0,
 			'uploaded'    => 0,
@@ -94,6 +95,10 @@ class Migration_Runner {
 		$state = self::default_state();
 		$state['running']    = true;
 		$state['mode']       = $mode;
+		// New run token: any batch worker still finishing a previous run will
+		// see the token change and discard its write instead of clobbering
+		// this fresh start.
+		$state['run_id']     = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( '', true );
 		$state['total']      = $this->count_attachments();
 		$state['started_at'] = time();
 		update_option( self::STATE_OPTION, $state, false );
@@ -135,6 +140,12 @@ class Migration_Runner {
 			return $state;
 		}
 
+		// The run token this worker belongs to. A batch can take a while, and
+		// the lock only serialises batch workers — it doesn't stop the
+		// control plane (start()/stop()) changing state meanwhile. We capture
+		// the token now and re-validate before persisting (see below).
+		$run_id = (string) $state['run_id'];
+
 		$migrator = new Migrator( null, $this->settings );
 		$migrator->set_dry_run( 'dry-run' === $state['mode'] )
 			->set_verify( 'verify' === $state['mode'] );
@@ -149,6 +160,26 @@ class Migration_Runner {
 		$state['cursor']     = (string) $result['next_cursor'];
 		if ( ! empty( $result['errors'] ) ) {
 			$state['last_error'] = (string) end( $result['errors'] );
+		}
+
+		// Re-read the control plane after the (potentially slow) batch. If a
+		// newer start() superseded this run, or a stop() was requested, respect
+		// that decision instead of blindly writing our snapshot back.
+		$current = $this->state();
+		if ( (string) $current['run_id'] !== $run_id ) {
+			// A different run owns the state now — discard our writes entirely.
+			$this->release_lock();
+			return $current;
+		}
+
+		if ( empty( $current['running'] ) ) {
+			// stop() landed mid-batch. Persist the progress we made so the job
+			// can resume, but honour the stop: stay stopped, don't reschedule.
+			$state['running'] = false;
+			update_option( self::STATE_OPTION, $state, false );
+			$this->clear_scheduled();
+			$this->release_lock();
+			return $state;
 		}
 
 		if ( ! empty( $result['done'] ) ) {
