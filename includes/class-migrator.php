@@ -216,6 +216,10 @@ class Migrator {
 		$timeboxed   = false;
 
 		global $wpdb;
+		// Fetch one extra row to peek whether more attachments follow this batch,
+		// so a final batch of exactly $batch_size isn't mistaken for "maybe more"
+		// (which would force a trailing empty tick and leave the run on "Running"
+		// until cron fires again — bad when the count is a multiple of the batch).
 		$ids = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT ID FROM {$wpdb->posts}
@@ -225,9 +229,13 @@ class Migrator {
 					ORDER BY ID ASC
 					LIMIT %d",
 				$cursor_id,
-				$batch_size
+				$batch_size + 1
 			)
 		);
+		$has_more = count( $ids ) > $batch_size;
+		if ( $has_more ) {
+			$ids = array_slice( $ids, 0, $batch_size );
+		}
 
 		$aggregate = array(
 			'processed'   => 0,
@@ -265,9 +273,9 @@ class Migrator {
 			}
 		}
 
-		// Done only when we actually reached the end of the table — never when
-		// we stopped early on the time budget (there's more past the cursor).
-		$aggregate['done'] = empty( $timeboxed ) && count( $ids ) < $batch_size;
+		// Done only when no more rows follow (the +1 peek) AND we didn't stop
+		// early on the time budget (which leaves more past the cursor).
+		$aggregate['done'] = empty( $timeboxed ) && ! $has_more;
 		return $aggregate;
 	}
 
