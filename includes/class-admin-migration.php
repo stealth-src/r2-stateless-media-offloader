@@ -161,6 +161,7 @@ JS;
 		$current = $this->runner->state();
 		if ( ! empty( $current['running'] ) ) {
 			$this->respond( $current );
+			return; // respond() (wp_send_json_success) already exits; explicit for static analysis.
 		}
 		// Upload and verify need R2 credentials; dry-run only counts (degrading to
 		// "everything as to-upload" when R2 isn't reachable), so allow it to
