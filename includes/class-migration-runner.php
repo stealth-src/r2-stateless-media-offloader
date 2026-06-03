@@ -36,6 +36,10 @@ class Migration_Runner {
 	// never run long enough for the lock to expire and admit a second worker on
 	// the same cursor — even after the single slow item that crosses the budget.
 	const BATCH_MAX_SECONDS = 45;
+	// Shorter budget for the admin-ajax-driven batch: a status poll runs inside
+	// admin-ajax.php and must return well within typical web execution limits,
+	// so it advances only a small slice and lets WP-Cron do the bulk.
+	const AJAX_BATCH_MAX_SECONDS = 10;
 	// Long enough that a healthy batch (up to BATCH items, each able to block
 	// on a remote download) is never mistaken for a crashed worker; the
 	// compare-and-swap in acquire_lock() is the actual correctness guarantee,
@@ -199,7 +203,7 @@ class Migration_Runner {
 	 *
 	 * @return array Current state after the batch.
 	 */
-	public function run_one_batch() {
+	public function run_one_batch( $max_seconds = self::BATCH_MAX_SECONDS ) {
 		$state = $this->state();
 		if ( empty( $state['running'] ) ) {
 			return $state;
@@ -228,6 +232,13 @@ class Migration_Runner {
 				return $state;
 			}
 
+			// Arm the next tick BEFORE doing batch work. wp_schedule_single_event
+			// persists immediately, so if this process dies mid-batch (timeout,
+			// OOM, deploy) the chain isn't lost — a queued tick still fires and
+			// resumes once the lock's TTL lapses. The post-batch path clears it
+			// on done/stop. schedule_next() is idempotent.
+			$this->schedule_next();
+
 			// The run token this worker belongs to. A batch can take a while,
 			// and the lock only serialises batch workers — it doesn't stop the
 			// control plane (start()/stop()) changing state meanwhile. We
@@ -240,7 +251,7 @@ class Migration_Runner {
 					->set_verify( 'verify' === $state['mode'] )
 					->set_heartbeat( array( $this, 'refresh_lock' ) );
 
-				$result = $migrator->migrate_batch( self::BATCH, (string) $state['cursor'], self::BATCH_MAX_SECONDS );
+				$result = $migrator->migrate_batch( self::BATCH, (string) $state['cursor'], (int) $max_seconds );
 
 				$state['processed'] += (int) $result['processed'];
 				$state['uploaded']  += (int) $result['uploaded'];

@@ -268,11 +268,9 @@ class R2_Client {
 		// Guard against a truncated download: compare against Content-Length.
 		// If the GET response omitted it (chunked/streamed), fall back to a HEAD
 		// so a short stream can't pass as a complete restore.
-		$len = wp_remote_retrieve_header( $response, 'content-length' );
-		if ( '' === (string) $len ) {
-			$len = $this->remote_object_size( $key );
-		}
-		if ( '' !== (string) $len && null !== $len && (int) $len !== (int) filesize( $local_path ) ) {
+		$len           = wp_remote_retrieve_header( $response, 'content-length' );
+		$expected_size = ( '' !== (string) $len ) ? (int) $len : $this->remote_object_size( $key );
+		if ( null !== $expected_size && $expected_size !== (int) filesize( $local_path ) ) {
 			wp_delete_file( $local_path );
 			return new \WP_Error( 'r2offload_download_incomplete', __( 'Downloaded object was incomplete.', 'r2-stateless-media-offload' ) );
 		}
@@ -379,10 +377,15 @@ class R2_Client {
 			$extra_headers
 		);
 
-		// Signed-header list (lowercased, sorted).
+		// Signed-header list (lowercased, sorted). SigV4 requires canonical
+		// header values to be trimmed AND have internal runs of whitespace
+		// collapsed to a single space; otherwise a value with a tab/double space
+		// (e.g. a Cache-Control supplied verbatim via a wp-config constant, which
+		// bypasses sanitisation) would be signed differently from how the server
+		// canonicalises it → SignatureDoesNotMatch.
 		$lower = array();
 		foreach ( $headers as $k => $v ) {
-			$lower[ strtolower( $k ) ] = trim( (string) $v );
+			$lower[ strtolower( $k ) ] = preg_replace( '/\s+/', ' ', trim( (string) $v ) );
 		}
 		ksort( $lower );
 		$signed_headers    = implode( ';', array_keys( $lower ) );

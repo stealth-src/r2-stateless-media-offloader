@@ -33,6 +33,15 @@ class Local_Fallback {
 	private $temp_files = array();
 
 	/**
+	 * Within-request cache of R2 key => restored temp path, so multiple filter
+	 * calls for the same object (e.g. get_attached_file + an image op) don't
+	 * download it more than once.
+	 *
+	 * @var array<string,string>
+	 */
+	private $restored = array();
+
+	/**
 	 * @param R2_Client $client
 	 * @param Settings  $settings
 	 */
@@ -139,6 +148,12 @@ class Local_Fallback {
 	 * @return string Temp path on success, '' on failure.
 	 */
 	private function restore_to_temp( $key, $basename, $attachment_id ) {
+		// Reuse a temp file already restored for this key this request (and only
+		// if it still exists — shutdown cleanup may not have run, but a stray
+		// unlink could have).
+		if ( isset( $this->restored[ $key ] ) && file_exists( $this->restored[ $key ] ) ) {
+			return $this->restored[ $key ];
+		}
 		$tmp = wp_tempnam( $basename );
 		if ( ! $tmp ) {
 			return '';
@@ -149,7 +164,8 @@ class Local_Fallback {
 			error_log( sprintf( 'r2offload: restore failed for %s (attachment %d): %s', $key, $attachment_id, $restored->get_error_message() ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return '';
 		}
-		$this->temp_files[] = $tmp;
+		$this->temp_files[]    = $tmp;
+		$this->restored[ $key ] = $tmp;
 		return $tmp;
 	}
 
@@ -163,6 +179,7 @@ class Local_Fallback {
 			}
 		}
 		$this->temp_files = array();
+		$this->restored   = array();
 	}
 
 	/**

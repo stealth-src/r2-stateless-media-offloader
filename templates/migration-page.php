@@ -66,7 +66,7 @@ $r2offload_configured = $settings->is_configured();
 	// caller didn't provide it.
 	$r2offload_resumable = isset( $r2offload_resumable )
 		? $r2offload_resumable
-		: ( empty( $state['running'] ) && empty( $state['finished_at'] ) && ( (int) $state['started_at'] > 0 || '' !== (string) $state['cursor'] ) );
+		: ( empty( $state['running'] ) && empty( $state['finished_at'] ) && ( (int) ( $state['started_at'] ?? 0 ) > 0 || '' !== (string) ( $state['cursor'] ?? '' ) ) );
 	?>
 	<p>
 		<button type="button" class="button button-primary" id="r2offload-mig-start" <?php disabled( ! $r2offload_configured || ! empty( $state['running'] ) ); ?>>

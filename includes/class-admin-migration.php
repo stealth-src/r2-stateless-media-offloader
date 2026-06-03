@@ -165,6 +165,9 @@ JS;
 		if ( ! $this->settings->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
 		}
+		if ( ! $this->runner->is_resumable( $this->runner->state() ) ) {
+			wp_send_json_error( array( 'message' => __( 'There is no stopped migration to resume.', 'r2-stateless-media-offload' ) ) );
+		}
 		$this->respond( $this->runner->resume() );
 	}
 
@@ -184,7 +187,9 @@ JS;
 		$this->guard();
 		$state = $this->runner->state();
 		if ( ! empty( $state['running'] ) ) {
-			$state = $this->runner->run_one_batch();
+			// Short budget: this runs inside admin-ajax.php and must return well
+			// within web execution limits. WP-Cron advances the bulk.
+			$state = $this->runner->run_one_batch( Migration_Runner::AJAX_BATCH_MAX_SECONDS );
 		}
 		$this->respond( $state );
 	}

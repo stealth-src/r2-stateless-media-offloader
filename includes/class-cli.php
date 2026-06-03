@@ -205,6 +205,14 @@ class CLI {
 			}
 		} while ( ! $done );
 
+		if ( $retry_passes && $pass >= Migration_Runner::MAX_PASSES && $pass_errors > 0 ) {
+			\WP_CLI::warning( sprintf(
+				'Reached the maximum of %d passes with %d item(s) still failing — re-run sync to retry them.',
+				Migration_Runner::MAX_PASSES,
+				$pass_errors
+			) );
+		}
+
 		\WP_CLI::log( '' );
 		\WP_CLI::log( '--- Summary ---' );
 		\WP_CLI::log( 'Mode:       ' . $mode );
