@@ -20,6 +20,14 @@ class Offloader {
 	private $settings;
 
 	/**
+	 * Attachment IDs already offloaded this request, so the two metadata filters
+	 * (see register()) don't upload every variant twice on a normal upload.
+	 *
+	 * @var array<int,bool>
+	 */
+	private $offloaded = array();
+
+	/**
 	 * @param R2_Client $client
 	 * @param Settings  $settings
 	 */
@@ -32,8 +40,16 @@ class Offloader {
 	 * Hook into the media pipeline.
 	 */
 	public function register() {
-		// Fires after WordPress has generated every registered size.
+		// Fires after WordPress has generated every registered size (new uploads,
+		// thumbnail regeneration).
 		add_filter( 'wp_generate_attachment_metadata', array( $this, 'offload' ), 10, 2 );
+		// In-admin image edits (crop/rotate/scale) persist via
+		// wp_update_attachment_metadata and never call
+		// wp_generate_attachment_metadata — without this hook the edited files are
+		// never offloaded (404 in Stateless, stale original in CDN). offload()
+		// dedupes per request, so a normal upload (where both filters fire) still
+		// uploads each variant only once.
+		add_filter( 'wp_update_attachment_metadata', array( $this, 'offload' ), 10, 2 );
 		// Mirror deletions to R2.
 		add_action( 'delete_attachment', array( $this, 'delete' ) );
 	}
@@ -60,6 +76,16 @@ class Offloader {
 		if ( empty( $files ) ) {
 			return $metadata;
 		}
+
+		// Both wp_generate_attachment_metadata and wp_update_attachment_metadata
+		// fire on a normal upload; once we're committing to upload this
+		// attachment's variants, skip the second firing so we don't push every
+		// object twice. Image edits fire only the update filter (on their own
+		// request, with an empty map here), so they're unaffected.
+		if ( isset( $this->offloaded[ $attachment_id ] ) ) {
+			return $metadata;
+		}
+		$this->offloaded[ $attachment_id ] = true;
 
 		$original_relative = isset( $metadata['file'] )
 			? $metadata['file']
@@ -257,13 +283,28 @@ class Offloader {
 		// from the upload/migrate paths. Seed with $original so it's always
 		// included even for the degenerate empty-_wp_attached_file case.
 		$dir = dirname( $original );
-		$dir = ( '' === $dir || '.' === $dir ) ? '' : trailingslashit( $dir );
+		$dir = ( '.' === $dir ) ? '' : trailingslashit( $dir );
 
 		$keys     = array( $original );
 		$metadata = wp_get_attachment_metadata( $attachment_id );
 		foreach ( Settings::enumerate_files( $metadata, $relative ) as $file ) {
 			$keys[] = $dir . $file['filename'];
 		}
+
+		// Image edits keep the pre-edit copies in _wp_attachment_backup_sizes (so
+		// "Restore original" works); these are NOT in the live metadata above.
+		// WordPress deletes them locally on attachment delete, so reap their R2
+		// objects too — otherwise they orphan as billable storage. Each entry's
+		// 'file' is a bare basename living in the same directory.
+		$backups = get_post_meta( $attachment_id, '_wp_attachment_backup_sizes', true );
+		if ( is_array( $backups ) ) {
+			foreach ( $backups as $backup ) {
+				if ( ! empty( $backup['file'] ) ) {
+					$keys[] = $dir . wp_basename( (string) $backup['file'] );
+				}
+			}
+		}
+
 		return array_values( array_unique( $keys ) );
 	}
 
@@ -298,7 +339,7 @@ class Offloader {
 		// keeps its exact key; sizes/original_image are siblings in its dir.
 		$base_key = $this->base_object_key( $attachment_id, $relative );
 		$dir      = dirname( $base_key );
-		$dir      = ( '' === $dir || '.' === $dir ) ? '' : trailingslashit( $dir );
+		$dir      = ( '.' === $dir ) ? '' : trailingslashit( $dir );
 
 		$files = array();
 		foreach ( Settings::enumerate_files( $metadata, $relative ) as $file ) {

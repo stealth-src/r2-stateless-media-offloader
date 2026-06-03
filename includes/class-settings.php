@@ -215,8 +215,10 @@ class Settings {
 			return array();
 		}
 
+		// dirname() returns '.' for a bare filename and never '' — only the '.'
+		// arm is reachable.
 		$dir = dirname( $relative );
-		$dir = ( '.' === $dir || '' === $dir ) ? '' : trailingslashit( $dir );
+		$dir = ( '.' === $dir ) ? '' : trailingslashit( $dir );
 
 		$files = array(
 			array(

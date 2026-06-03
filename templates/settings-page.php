@@ -4,7 +4,6 @@
  *
  * Included by Admin_Settings::render_page(), which provides:
  *   @var \R2Offload\Settings $settings
- *   @var string $page          Page slug.
  *   @var string $nonce_action
  *   @var string $nonce_field
  *

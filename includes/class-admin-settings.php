@@ -220,7 +220,6 @@ JS;
 			return;
 		}
 		$settings = $this->settings; // Used by the template include.
-		$page     = self::PAGE_SLUG;
 		$nonce_action = self::NONCE_ACTION;
 		$nonce_field  = self::NONCE_FIELD;
 		require R2OFFLOAD_PLUGIN_DIR . 'templates/settings-page.php';
