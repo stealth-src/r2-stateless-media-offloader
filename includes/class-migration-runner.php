@@ -237,7 +237,8 @@ class Migration_Runner {
 			try {
 				$migrator = new Migrator( null, $this->settings );
 				$migrator->set_dry_run( 'dry-run' === $state['mode'] )
-					->set_verify( 'verify' === $state['mode'] );
+					->set_verify( 'verify' === $state['mode'] )
+						->set_heartbeat( array( $this, 'refresh_lock' ) );
 
 				$result = $migrator->migrate_batch( self::BATCH, (string) $state['cursor'], self::BATCH_MAX_SECONDS );
 
@@ -439,6 +440,38 @@ class Migration_Runner {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Extend this instance's lock expiry (compare-and-swap on the exact value
+	 * we hold). Called as the migrator's heartbeat so a single attachment with
+	 * many slow remote fetches can't let the lock lapse and admit a second
+	 * worker. A no-op if we no longer hold the lock (the CAS simply misses).
+	 */
+	public function refresh_lock() {
+		global $wpdb;
+
+		if ( '' === $this->lock_value ) {
+			return;
+		}
+		$parts = explode( '|', $this->lock_value );
+		$token = isset( $parts[0] ) ? $parts[0] : '';
+		if ( '' === $token ) {
+			return;
+		}
+		$new = $token . '|' . ( time() + self::LOCK_TTL );
+		$updated = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				"UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
+				$new,
+				self::LOCK_OPTION,
+				$this->lock_value
+			)
+		);
+		if ( $updated ) {
+			wp_cache_delete( self::LOCK_OPTION, 'options' );
+			$this->lock_value = $new;
+		}
 	}
 
 	/**

@@ -54,6 +54,15 @@ class Migrator {
 	private $download_timeout = 300;
 
 	/**
+	 * Optional callback invoked before each item is processed, so a long-running
+	 * batch can keep an external resource alive (the runner uses it to refresh
+	 * its lock between potentially-slow per-file fetches).
+	 *
+	 * @var callable|null
+	 */
+	private $heartbeat = null;
+
+	/**
 	 * @param R2_Client|null $client
 	 * @param Settings|null  $settings
 	 */
@@ -96,6 +105,17 @@ class Migrator {
 		return $this;
 	}
 
+	/**
+	 * Set a callback fired before each item is processed (see $heartbeat).
+	 *
+	 * @param callable|null $cb
+	 * @return self
+	 */
+	public function set_heartbeat( $cb ) {
+		$this->heartbeat = is_callable( $cb ) ? $cb : null;
+		return $this;
+	}
+
 	// -----------------------------------------------------------------
 	//  Public API
 	// -----------------------------------------------------------------
@@ -134,6 +154,12 @@ class Migrator {
 		$items = $this->build_items( $attachment_id, $relative );
 
 		foreach ( $items as $item ) {
+			// Heartbeat before each (possibly slow, remote) item so the runner
+			// can keep its lock alive even when one attachment has many large
+			// variants that together exceed the lock TTL.
+			if ( null !== $this->heartbeat ) {
+				call_user_func( $this->heartbeat );
+			}
 			$this->migrate_item( $attachment_id, $item, $result );
 		}
 
