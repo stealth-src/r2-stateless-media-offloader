@@ -317,7 +317,8 @@ class Migrator {
 	 * The attachment's canonical R2 key for the original: its stored
 	 * `_r2offload_key` when already synced (so it survives a later path_prefix
 	 * change), else derived from the current path_prefix. Mirrors the offloader
-	 * so every path agrees on keys.
+	 * so every path agrees on keys. Relies on the same invariant: META_KEY is
+	 * only ever written alongside META_SYNCED and never cleared on its own.
 	 *
 	 * @param int    $attachment_id
 	 * @param string $relative

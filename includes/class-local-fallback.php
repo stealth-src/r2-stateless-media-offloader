@@ -42,6 +42,14 @@ class Local_Fallback {
 	private $restored = array();
 
 	/**
+	 * Within-request cache of attachment_id => original R2 key (or false), to
+	 * avoid repeated post-meta lookups for the same attachment.
+	 *
+	 * @var array<int,string|false>
+	 */
+	private $key_cache = array();
+
+	/**
 	 * @param R2_Client $client
 	 * @param Settings  $settings
 	 */
@@ -55,7 +63,7 @@ class Local_Fallback {
 	 * copies are still present, so nothing to restore.
 	 */
 	public function register() {
-		if ( 'stateless' !== $this->settings->get( 'mode' ) ) {
+		if ( 'stateless' !== $this->settings->get( 'mode' ) || ! $this->settings->is_configured() ) {
 			return;
 		}
 		add_filter( 'get_attached_file', array( $this, 'ensure_local' ), 10, 2 );
@@ -180,15 +188,22 @@ class Local_Fallback {
 		}
 		$this->temp_files = array();
 		$this->restored   = array();
+		$this->key_cache  = array();
 	}
 
 	/**
-	 * Resolve an offloaded attachment's original R2 key, or false.
+	 * Resolve an offloaded attachment's original R2 key, or false. Cached per
+	 * request — the read path may resolve the same attachment several times
+	 * (get_attached_file → an image op → original-image path) and each lookup
+	 * hits post meta.
 	 *
 	 * @param int $attachment_id
 	 * @return string|false
 	 */
 	private function original_key( $attachment_id ) {
-		return $this->settings->resolve_object_key( $attachment_id );
+		if ( ! array_key_exists( $attachment_id, $this->key_cache ) ) {
+			$this->key_cache[ $attachment_id ] = $this->settings->resolve_object_key( $attachment_id );
+		}
+		return $this->key_cache[ $attachment_id ];
 	}
 }

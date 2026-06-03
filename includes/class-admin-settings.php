@@ -109,8 +109,17 @@ class Admin_Settings {
 			}
 		}
 
-		// autoload = false: keep credentials out of the autoloaded options cache.
+		// autoload = false: keep credentials (incl. the encrypted secret) out of
+		// the autoloaded options cache that loads on every request. update_option's
+		// autoload arg only takes effect when the value actually changes, so on a
+		// no-op save it wouldn't flip an option that was somehow created with
+		// autoload on. Enforce it explicitly where core supports it (WP 6.6+);
+		// on older versions the first save created the row via add_option(...,
+		// false), so it is already correct.
 		update_option( Settings::OPTION_KEY, $new, false );
+		if ( function_exists( 'wp_set_option_autoload' ) ) {
+			wp_set_option_autoload( Settings::OPTION_KEY, false );
+		}
 
 		wp_safe_redirect(
 			add_query_arg(

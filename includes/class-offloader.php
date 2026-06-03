@@ -250,6 +250,11 @@ class Offloader {
 	 * and collect_files() so the marked key, the uploaded keys and the URL
 	 * rewriter all agree.
 	 *
+	 * Invariant this relies on: META_KEY is ONLY ever written together with
+	 * META_SYNCED (here and in Migrator) and is never cleared on its own — so a
+	 * non-empty META_KEY means the attachment was synced at that key, and
+	 * anchoring on it (without re-checking META_SYNCED) is safe.
+	 *
 	 * @param int    $attachment_id
 	 * @param string $relative
 	 * @return string
