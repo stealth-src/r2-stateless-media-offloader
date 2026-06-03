@@ -327,7 +327,10 @@ class R2_Client {
 		$domain = $this->settings->get( 'custom_domain' );
 		if ( '' !== $domain ) {
 			$domain = rtrim( $domain, '/' );
-			if ( 0 !== strpos( $domain, 'http' ) ) {
+			// Add a scheme only when there genuinely isn't one. A literal
+			// strpos('http') would misfire for a scheme-less host that merely
+			// starts with those letters (e.g. "http-cdn.example.com").
+			if ( ! preg_match( '#^https?://#i', $domain ) ) {
 				$domain = 'https://' . $domain;
 			}
 			return $domain . $path;

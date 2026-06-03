@@ -82,7 +82,11 @@ class Settings {
 	 * @return string
 	 */
 	public function encrypt_secret( $plain ) {
-		if ( '' === $plain || ! function_exists( 'openssl_encrypt' ) ) {
+		if ( '' === $plain ) {
+			return $plain;
+		}
+		if ( ! function_exists( 'openssl_encrypt' ) ) {
+			error_log( 'r2offload: OpenSSL unavailable — R2 secret stored UNENCRYPTED at rest.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return $plain;
 		}
 		// AES-256-GCM (authenticated) — detects tampering, unlike CBC.
@@ -91,6 +95,7 @@ class Settings {
 		$tag = '';
 		$cipher = openssl_encrypt( $plain, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag );
 		if ( false === $cipher ) {
+			error_log( 'r2offload: encrypt_secret() failed — R2 secret stored UNENCRYPTED at rest. Check the OpenSSL configuration.' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return $plain;
 		}
 		// Versioned marker so the format can evolve without breaking old blobs.

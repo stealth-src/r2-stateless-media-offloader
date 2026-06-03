@@ -485,6 +485,11 @@ class Migrator {
 				'timeout'     => 15,
 				'redirection' => 5,
 				'sslverify'   => true,
+				// For cross-origin sources, validate each redirect hop so a 302
+				// can't be followed into a private address. Same-origin fetches
+				// (the site's own host, which may be a private IP on k8s/Docker)
+				// keep redirects unrestricted.
+				'reject_unsafe_urls' => ! $this->is_same_origin( $url, home_url() ),
 			)
 		);
 		if ( is_wp_error( $head ) ) {
@@ -613,7 +618,18 @@ class Migrator {
 		if ( ! function_exists( 'download_url' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
+		// download_url() takes no reject_unsafe_urls arg, so add it via a scoped
+		// http_request_args filter for cross-origin sources only — making WP
+		// validate each redirect hop (no 302 into a private address). Same-origin
+		// downloads keep redirects unrestricted (private-IP host on k8s/Docker).
+		$cross_origin = ! $this->is_same_origin( $url, home_url() );
+		if ( $cross_origin ) {
+			add_filter( 'http_request_args', array( $this, 'reject_unsafe_redirects' ) );
+		}
 		$tmp = download_url( $url, $this->download_timeout );
+		if ( $cross_origin ) {
+			remove_filter( 'http_request_args', array( $this, 'reject_unsafe_redirects' ) );
+		}
 		if ( is_wp_error( $tmp ) ) {
 			return $tmp;
 		}
@@ -624,6 +640,18 @@ class Migrator {
 			);
 		}
 		return $tmp;
+	}
+
+	/**
+	 * http_request_args filter (scoped to cross-origin downloads) that turns on
+	 * reject_unsafe_urls so WP validates every redirect hop.
+	 *
+	 * @param array $args
+	 * @return array
+	 */
+	public function reject_unsafe_redirects( $args ) {
+		$args['reject_unsafe_urls'] = true;
+		return $args;
 	}
 
 	/**
