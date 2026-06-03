@@ -126,7 +126,10 @@ class CLI {
 		$dry_run  = ! empty( $assoc_args['dry-run'] );
 		$verify   = ! empty( $assoc_args['verify'] );
 
-		// Dry-run without verify is the only mode that doesn't touch R2.
+		// Verify and upload require R2 credentials. Dry-run doesn't require them
+		// and never uploads — but it still issues a HEAD per item to report
+		// adoption-aware counts (what an upload would skip), degrading to
+		// "count everything as to-upload" when R2 isn't configured.
 		$needs_r2 = ! $dry_run || $verify;
 		if ( $needs_r2 && ! $settings->is_configured() ) {
 			\WP_CLI::error( 'R2 not configured. Set R2OFFLOAD_* constants in wp-config.php or via settings.' );

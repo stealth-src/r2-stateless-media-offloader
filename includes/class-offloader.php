@@ -49,6 +49,12 @@ class Offloader {
 		if ( ! $this->settings->is_configured() ) {
 			return $metadata;
 		}
+		// Lets operators freeze offload-on-upload during a migration window when
+		// another plugin (e.g. wp-stateless) still owns ingestion — return false
+		// to stop new uploads being pushed to R2 until this plugin takes over.
+		if ( ! apply_filters( 'r2offload_offload_on_upload', true, $attachment_id, $metadata ) ) {
+			return $metadata;
+		}
 
 		$files = $this->collect_files( $metadata, $attachment_id );
 		if ( empty( $files ) ) {
@@ -143,6 +149,12 @@ class Offloader {
 	 */
 	public function delete( $attachment_id ) {
 		if ( ! $this->settings->is_configured() ) {
+			return;
+		}
+		// Lets operators stop mirroring WP deletions to R2 during a migration
+		// window (return false) so R2 and the still-live source can't diverge
+		// before cutover is final.
+		if ( ! apply_filters( 'r2offload_mirror_deletes', true, $attachment_id ) ) {
 			return;
 		}
 		foreach ( $this->r2_keys_for( $attachment_id ) as $key ) {

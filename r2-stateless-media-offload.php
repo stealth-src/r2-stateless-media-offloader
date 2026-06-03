@@ -50,7 +50,7 @@ spl_autoload_register(
  * On deactivation, clear the background-migration cron and stop any run in
  * progress so a stale tick can't linger or resume mid-batch.
  */
-register_deactivation_hook( __FILE__, array( __NAMESPACE__ . '\\Migration_Runner', 'on_deactivate' ) );
+register_deactivation_hook( __FILE__, array( Migration_Runner::class, 'on_deactivate' ) );
 
 /**
  * Boot the plugin once all plugins are loaded.

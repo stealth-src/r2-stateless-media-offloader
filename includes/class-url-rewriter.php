@@ -19,6 +19,14 @@ defined( 'ABSPATH' ) || exit;
 
 class URL_Rewriter {
 
+	// Run the render-time URL filters late so that, when another offload plugin
+	// (e.g. wp-stateless during a GCS->R2 migration) also filters these hooks at
+	// the default priority 10, this plugin's rewrite deterministically wins for
+	// the attachments it has adopted (synced) instead of depending on plugin
+	// load order. Un-synced attachments pass through untouched, so the other
+	// plugin's result still stands for those.
+	const FILTER_PRIORITY = 99;
+
 	/** @var R2_Client */
 	private $client;
 
@@ -87,13 +95,13 @@ class URL_Rewriter {
 		if ( ! $this->settings->serves_public_url() ) {
 			return;
 		}
-		add_filter( 'wp_get_attachment_url', array( $this, 'filter_attachment_url' ), 10, 2 );
-		add_filter( 'wp_get_attachment_image_src', array( $this, 'filter_image_src' ), 10, 4 );
-		add_filter( 'wp_calculate_image_srcset', array( $this, 'filter_srcset' ), 10, 5 );
+		add_filter( 'wp_get_attachment_url', array( $this, 'filter_attachment_url' ), self::FILTER_PRIORITY, 2 );
+		add_filter( 'wp_get_attachment_image_src', array( $this, 'filter_image_src' ), self::FILTER_PRIORITY, 4 );
+		add_filter( 'wp_calculate_image_srcset', array( $this, 'filter_srcset' ), self::FILTER_PRIORITY, 5 );
 		// Big-image full-resolution original — served via its own filter, not
 		// wp_get_attachment_url, so it needs hooking too or it 404s in Stateless
 		// mode once the local copy is removed.
-		add_filter( 'wp_get_original_image_url', array( $this, 'filter_original_image_url' ), 10, 2 );
+		add_filter( 'wp_get_original_image_url', array( $this, 'filter_original_image_url' ), self::FILTER_PRIORITY, 2 );
 	}
 
 	/**
@@ -140,6 +148,15 @@ class URL_Rewriter {
 	 */
 	public function filter_image_src( $image, $attachment_id, $size, $icon ) {
 		if ( self::is_suppressed() || ! is_array( $image ) || empty( $image[0] ) ) {
+			return $image;
+		}
+		// When $icon is requested for a NON-image attachment (PDF/zip/…),
+		// WordPress returns a generic mime-type icon from wp-includes, not an
+		// uploads file. rewrite_same_dir() would turn that icon's basename into
+		// an R2 key that doesn't exist → a broken icon. (We can't just test the
+		// uploads base URL here: with another offload plugin active the src may
+		// legitimately be a remote URL.) Leave such icons untouched.
+		if ( $icon && ! wp_attachment_is_image( (int) $attachment_id ) ) {
 			return $image;
 		}
 		$rewritten = $this->rewrite_same_dir( (int) $attachment_id, $image[0] );

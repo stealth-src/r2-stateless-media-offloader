@@ -104,7 +104,11 @@ class Admin_Settings {
 		// "leave blank to keep" password field doesn't wipe a stored secret.
 		// Stored encrypted at rest.
 		if ( ! $this->settings->is_constant( 'secret_key' ) ) {
-			$submitted = isset( $_POST['secret_key'] ) ? trim( wp_unslash( $_POST['secret_key'] ) ) : '';
+			$raw_secret = isset( $_POST['secret_key'] ) ? wp_unslash( $_POST['secret_key'] ) : '';
+			// Cast a crafted array submission to '' (don't warn), then trim — R2
+			// keys are whitespace-free, so trimming only guards against an
+			// accidentally-pasted leading/trailing space or newline.
+			$submitted = is_string( $raw_secret ) ? trim( $raw_secret ) : '';
 			if ( '' !== $submitted ) {
 				$new['secret_key'] = $this->settings->encrypt_secret( $submitted );
 			}
