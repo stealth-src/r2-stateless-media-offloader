@@ -173,6 +173,9 @@ class Local_Fallback {
 		}
 		$tmp = wp_tempnam( $basename );
 		if ( ! $tmp ) {
+			// Temp-dir exhaustion / non-writable temp affects every stateless
+			// restore, so surface it rather than failing silently.
+			error_log( sprintf( 'r2offload: could not create a temp file to restore %s (attachment %d)', $key, $attachment_id ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			return '';
 		}
 		$restored = $this->client->download_object( $key, $tmp );

@@ -245,7 +245,6 @@ class Migration_Runner {
 		// blind update_option would clobber that — regressing the cursor (one batch
 		// re-processed on resume) and the counters. The CAS preserves the worker's
 		// latest progress and only changes `running`.
-		$state = $this->state();
 		for ( $attempt = 0; $attempt < self::PERSIST_RETRIES; $attempt++ ) {
 			wp_cache_delete( self::STATE_OPTION, 'options' );
 			$expected = get_option( self::STATE_OPTION, array() );
@@ -261,7 +260,11 @@ class Migration_Runner {
 		}
 		$this->clear_scheduled();
 		$this->release_lock();
-		return $state;
+		// Return the ACTUAL persisted state, not our last in-memory attempt: if the
+		// CAS exhausted its retries under sustained contention, running may still be
+		// true in the DB, and the caller (the admin UI) must see the truth rather
+		// than a "stopped" state that didn't persist.
+		return $this->fresh_state();
 	}
 
 	/**

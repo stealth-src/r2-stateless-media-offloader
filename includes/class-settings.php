@@ -127,7 +127,10 @@ class Settings {
 		// v2 — AES-256-GCM: iv(12) | tag(16) | ciphertext.
 		if ( 0 === strpos( $stored, 'r2enc:v2:' ) ) {
 			$raw = base64_decode( substr( $stored, 9 ), true );
-			if ( false === $raw || strlen( $raw ) <= 28 ) {
+			// Minimum valid GCM blob is iv(12) + tag(16) + 0-byte ciphertext = 28
+			// bytes, so reject only when SHORTER than 28 (a 28-byte blob decrypts to
+			// an empty string, which is valid).
+			if ( false === $raw || strlen( $raw ) < 28 ) {
 				return $fail( 'corrupt ciphertext' );
 			}
 			$plain = openssl_decrypt( substr( $raw, 28 ), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr( $raw, 0, 12 ), substr( $raw, 12, 16 ) );
