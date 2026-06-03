@@ -86,7 +86,10 @@ jQuery(function($){
 	function render(s){
 		var pct = s.total > 0 ? Math.min(100, Math.round((s.processed / s.total) * 100)) : 0;
 		$bar.css('width', pct + '%').text(pct + '%');
-		var resumable = !s.running && !s.finished_at && ((s.started_at > 0) || s.cursor);
+		// Authoritative flag from the server (Migration_Runner::is_resumable());
+		// fall back to a local derivation only if an older response omits it.
+		var resumable = ('resumable' in s) ? !!s.resumable
+			: (!s.running && !s.finished_at && ((s.started_at > 0) || s.cursor));
 		$txt.text(
 			(s.running ? 'Running' : (s.finished_at ? 'Done' : (resumable ? 'Stopped' : 'Idle'))) +
 			' — ' + s.processed + ' / ' + s.total + ' processed' +
@@ -139,7 +142,19 @@ JS;
 		if ( ! $this->settings->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
 		}
-		wp_send_json_success( $this->runner->start( $mode ) );
+		$this->respond( $this->runner->start( $mode ) );
+	}
+
+	/**
+	 * Send a state payload, augmented with the authoritative `resumable` flag so
+	 * the JS never has to re-derive the resume condition (single source of
+	 * truth: Migration_Runner::is_resumable()).
+	 *
+	 * @param array $state
+	 */
+	private function respond( array $state ) {
+		$state['resumable'] = $this->runner->is_resumable( $state );
+		wp_send_json_success( $state );
 	}
 
 	/**
@@ -150,7 +165,7 @@ JS;
 		if ( ! $this->settings->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
 		}
-		wp_send_json_success( $this->runner->resume() );
+		$this->respond( $this->runner->resume() );
 	}
 
 	/**
@@ -158,7 +173,7 @@ JS;
 	 */
 	public function ajax_stop() {
 		$this->guard();
-		wp_send_json_success( $this->runner->stop() );
+		$this->respond( $this->runner->stop() );
 	}
 
 	/**
@@ -171,7 +186,7 @@ JS;
 		if ( ! empty( $state['running'] ) ) {
 			$state = $this->runner->run_one_batch();
 		}
-		wp_send_json_success( $state );
+		$this->respond( $state );
 	}
 
 	/**
@@ -191,8 +206,9 @@ JS;
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
-		$settings = $this->settings; // Used by the template include.
-		$state    = $this->runner->state();
+		$settings            = $this->settings; // Used by the template include.
+		$state               = $this->runner->state();
+		$r2offload_resumable = $this->runner->is_resumable( $state );
 		require R2OFFLOAD_PLUGIN_DIR . 'templates/migration-page.php';
 	}
 }

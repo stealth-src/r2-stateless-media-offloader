@@ -65,6 +65,19 @@ class Local_Fallback {
 	 * @return string
 	 */
 	public function ensure_local_original( $path, $attachment_id ) {
+		return $this->restore_sibling( $path, $attachment_id );
+	}
+
+	/**
+	 * Restore a file that lives in the same R2 "directory" as the attachment's
+	 * resolved original key, matched by the requested basename — covers both an
+	 * image-editor size path and the big-image full-resolution original.
+	 *
+	 * @param string $path          Expected (possibly removed) local path.
+	 * @param int    $attachment_id
+	 * @return string The temp restore path, or $path unchanged when not offloaded.
+	 */
+	private function restore_sibling( $path, $attachment_id ) {
 		if ( '' === (string) $path || file_exists( $path ) ) {
 			return $path;
 		}
@@ -112,20 +125,9 @@ class Local_Fallback {
 	 * @return string
 	 */
 	public function ensure_local_for_edit( $filepath, $attachment_id, $size ) {
-		if ( '' === (string) $filepath || file_exists( $filepath ) ) {
-			return $filepath;
-		}
-		$original = $this->original_key( (int) $attachment_id );
-		if ( false === $original ) {
-			return $filepath;
-		}
 		// The editor path may be a size; restore the matching R2 object by
 		// keeping the original's directory and the requested basename.
-		$dir = dirname( $original );
-		$dir = ( '.' === $dir || '' === $dir ) ? '' : trailingslashit( $dir );
-		$key = $dir . wp_basename( $filepath );
-		$tmp = $this->restore_to_temp( $key, wp_basename( $filepath ), (int) $attachment_id );
-		return ( '' === $tmp ) ? $filepath : $tmp;
+		return $this->restore_sibling( $filepath, $attachment_id );
 	}
 
 	/**

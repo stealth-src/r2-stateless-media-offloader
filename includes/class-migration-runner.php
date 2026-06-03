@@ -270,6 +270,7 @@ class Migration_Runner {
 			// permanently-failing item can't loop forever.
 			if (
 				! empty( $result['done'] )
+				&& 'upload' === $state['mode']
 				&& (int) $state['pass_errors'] > 0
 				&& (int) $state['pass'] < self::MAX_PASSES
 			) {
@@ -401,6 +402,13 @@ class Migration_Runner {
 	 *    lock, only the first UPDATE matches — the rest find the value already
 	 *    changed and back off. No blind update_option() that all of them win.
 	 *
+	 * NB: we INSERT directly rather than via add_option(), which uses
+	 * `INSERT ... ON DUPLICATE KEY UPDATE` and so would let two concurrent
+	 * first-acquirers both "succeed" (one inserts, the other updates — both
+	 * report affected rows). A plain INSERT fails on the duplicate key, so only
+	 * one racer wins. Reads go straight to the DB too, bypassing the options
+	 * cache, since this is a cross-process lock.
+	 *
 	 * release_lock() and the reclaim both key on this instance's own value, so
 	 * a worker can never delete or steal a lock another worker still holds.
 	 *
@@ -412,17 +420,34 @@ class Migration_Runner {
 		$now   = time();
 		$value = $this->new_lock_value( $now );
 
-		// Non-autoloaded so the lock never rides along in the options cache.
-		if ( add_option( self::LOCK_OPTION, $value, '', false ) ) {
+		// Atomic create: a plain INSERT fails (no rows, duplicate-key error)
+		// when the lock row already exists, so exactly one concurrent caller
+		// can create it. autoload 'no' keeps it out of the alloptions cache.
+		$suppressed = $wpdb->suppress_errors( true ); // Duplicate-key is expected, not a real error.
+		$inserted   = $wpdb->query( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare(
+				"INSERT INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
+				self::LOCK_OPTION,
+				$value,
+				'no'
+			)
+		);
+		$wpdb->suppress_errors( $suppressed );
+		if ( 1 === (int) $inserted ) {
+			wp_cache_delete( self::LOCK_OPTION, 'options' );
 			$this->lock_value = $value;
 			return true;
 		}
 
-		$current = (string) get_option( self::LOCK_OPTION, '' );
+		// Row exists. Read the live value straight from the DB (not get_option,
+		// which can serve a stale/cached miss for this lock).
+		$current = (string) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::LOCK_OPTION )
+		);
 		$parts   = explode( '|', $current );
 		$expires = isset( $parts[1] ) ? (int) $parts[1] : 0;
-		if ( $expires > $now ) {
-			return false; // Still held by a live worker.
+		if ( '' === $current || $expires > $now ) {
+			return false; // Gone (someone released — try again next tick) or still held.
 		}
 
 		// Expired — reclaim via compare-and-swap; exactly one racer can win.
