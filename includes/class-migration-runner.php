@@ -310,7 +310,19 @@ class Migration_Runner {
 				$state['pass_errors'] += count( $result['errors'] );
 				$state['bytes']     += (int) $result['bytes'];
 				$state['cursor']     = (string) $result['next_cursor'];
-				$state['fail_streak'] = 0; // Batch completed — clear the breaker.
+				// Circuit breaker: a batch that THREW bumps the streak in catch
+				// below. Also bump it when an UPLOAD batch processed items but none
+				// uploaded or skipped — i.e. every item failed (e.g. wrong
+				// credentials → every PUT 403). Otherwise a uniformly-failing run
+				// would grind through all MAX_PASSES passes of the whole library
+				// before stopping. A single success (upload or adoption skip) clears
+				// it. Dry-run/verify count progress differently, so only gate upload.
+				$batch_made_progress = ( (int) $result['uploaded'] > 0 || (int) $result['skipped'] > 0 );
+				if ( 'upload' === $state['mode'] && (int) $result['processed'] > 0 && ! $batch_made_progress ) {
+					++$state['fail_streak'];
+				} else {
+					$state['fail_streak'] = 0;
+				}
 				if ( ! empty( $result['errors'] ) ) {
 					$state['last_error'] = (string) end( $result['errors'] );
 				}

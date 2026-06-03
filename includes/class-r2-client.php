@@ -136,7 +136,7 @@ class R2_Client {
 		if ( 204 === $code || 200 === $code ) {
 			return true;
 		}
-		return new \WP_Error( 'r2offload_delete_failed', sprintf( /* translators: %d: HTTP status */ __( 'Delete failed HTTP %d', 'r2-stateless-media-offload' ), $code ) );
+		return new \WP_Error( 'r2offload_delete_failed', sprintf( /* translators: %d: HTTP status */ __( 'Delete failed HTTP %d', 'r2-stateless-media-offload' ), $code ) . $this->error_body_detail( $response ) );
 	}
 
 	/**
@@ -508,7 +508,31 @@ class R2_Client {
 		if ( $code >= 200 && $code <= 299 ) {
 			return true;
 		}
-		return new \WP_Error( $error_code, $error_msg . sprintf( ' (HTTP %d)', $code ) );
+		return new \WP_Error( $error_code, $error_msg . sprintf( ' (HTTP %d)', $code ) . $this->error_body_detail( $response ) );
+	}
+
+	/**
+	 * Build a short, operator-friendly suffix from an R2 error response so a
+	 * failed upload/delete surfaces e.g. "AccessDenied: Access Denied" or
+	 * "NoSuchBucket: ..." instead of a bare status code. Prefers the S3-style
+	 * <Code>/<Message> XML; falls back to a trimmed one-line body snippet. R2
+	 * error bodies carry only Code/Message/RequestId — no credentials.
+	 *
+	 * @param array $response
+	 * @return string Leading-space-prefixed detail, or '' when nothing useful.
+	 */
+	private function error_body_detail( $response ) {
+		$body = trim( (string) wp_remote_retrieve_body( $response ) );
+		if ( '' === $body ) {
+			return '';
+		}
+		$xml_code = preg_match( '#<Code>([^<]+)</Code>#', $body, $m ) ? trim( $m[1] ) : '';
+		$xml_msg  = preg_match( '#<Message>([^<]+)</Message>#', $body, $m ) ? trim( $m[1] ) : '';
+		if ( '' !== $xml_code ) {
+			return ' ' . $xml_code . ( '' !== $xml_msg ? ': ' . $xml_msg : '' );
+		}
+		$snippet = trim( (string) preg_replace( '/\s+/', ' ', $body ) );
+		return ' ' . ( strlen( $snippet ) > 200 ? substr( $snippet, 0, 200 ) . '…' : $snippet );
 	}
 
 	/**
