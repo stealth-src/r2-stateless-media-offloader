@@ -139,10 +139,15 @@ class CLI {
 		// Migrator directly and does NOT share the background runner's lock, so
 		// running it while an admin/cron migration is active would put two
 		// unsynchronised writers on the same library. Refuse rather than
-		// double-process. Dry-run/verify are read-only (HEADs only), so they may
-		// run alongside a background migration.
-		if ( ! $dry_run && ! $verify && ! empty( ( new Migration_Runner( $settings ) )->state()['running'] ) ) {
-			\WP_CLI::error( 'A background migration is currently running (Media → Migrate to R2). Stop it first, or wait for it to finish, before running an upload sync.' );
+		// double-process. Check BOTH the running flag AND the live lock: just after
+		// a Stop the run is no longer "running" but a worker may still be finishing
+		// its in-flight batch and holding the lock. Dry-run/verify are read-only
+		// (HEADs only), so they may run alongside a background migration.
+		if ( ! $dry_run && ! $verify ) {
+			$runner = new Migration_Runner( $settings );
+			if ( ! empty( $runner->state()['running'] ) || $runner->has_active_worker() ) {
+				\WP_CLI::error( 'A background migration is running or finishing a batch (Media → Migrate to R2). Stop it and wait a moment for the current batch to finish before running an upload sync.' );
+			}
 		}
 
 		$batch   = $this->positive_int_arg( $assoc_args, 'batch', 100 );

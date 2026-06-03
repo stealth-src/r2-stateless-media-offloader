@@ -56,7 +56,13 @@ if ( is_multisite() ) {
 			break;
 		}
 		switch_to_blog( (int) $r2offload_site_id );
-		r2offload_uninstall_cleanup_site();
+		try {
+			r2offload_uninstall_cleanup_site();
+		} catch ( \Throwable $e ) {
+			// Best-effort: a DB error on one site must not abort the whole
+			// uninstall — log and move on. restore_current_blog() below still runs.
+			error_log( 'r2offload uninstall: cleanup failed for site ' . (int) $r2offload_site_id . ': ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
 		restore_current_blog();
 	}
 	if ( $r2offload_bailed ) {

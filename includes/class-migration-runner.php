@@ -239,12 +239,54 @@ class Migration_Runner {
 	 * @return array New state.
 	 */
 	public function stop() {
-		$state            = $this->state();
-		$state['running'] = false;
-		update_option( self::STATE_OPTION, $state, false );
+		// Flip running=false on the FRESHEST state via CAS, not a blind write of
+		// this request's snapshot: stop() doesn't hold the batch lock, so a worker
+		// may persist a newer cursor/counters between our read and our write. A
+		// blind update_option would clobber that — regressing the cursor (one batch
+		// re-processed on resume) and the counters. The CAS preserves the worker's
+		// latest progress and only changes `running`.
+		$state = $this->state();
+		for ( $attempt = 0; $attempt < self::PERSIST_RETRIES; $attempt++ ) {
+			wp_cache_delete( self::STATE_OPTION, 'options' );
+			$expected = get_option( self::STATE_OPTION, array() );
+			$state    = array_merge( self::default_state(), is_array( $expected ) ? $expected : array() );
+			if ( empty( $state['running'] ) ) {
+				break; // Already stopped (or never ran) — nothing to flip.
+			}
+			$state['running'] = false;
+			if ( $this->cas_state( $expected, $state ) ) {
+				break;
+			}
+			// CAS lost to a concurrent worker write — re-read and retry.
+		}
 		$this->clear_scheduled();
 		$this->release_lock();
 		return $state;
+	}
+
+	/**
+	 * Whether a batch worker currently holds the migration lock — i.e. one is
+	 * actively processing (or crashed within the lock's TTL). Distinct from
+	 * state['running']: after stop() the run is no longer "running" but a prior
+	 * worker may still be finishing its in-flight batch and holding the lock
+	 * (stop() can't release another process's lock). The WP-CLI command checks
+	 * this — it bypasses this lock, so without the check it could upload alongside
+	 * that in-flight worker. Reads straight from the DB, bypassing the options
+	 * cache, since the lock is a cross-process signal.
+	 *
+	 * @return bool
+	 */
+	public function has_active_worker() {
+		global $wpdb;
+		$current = (string) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- cross-process lock; must bypass the cache.
+			$wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::LOCK_OPTION )
+		);
+		if ( '' === $current ) {
+			return false;
+		}
+		$parts   = explode( '|', $current );
+		$expires = isset( $parts[1] ) ? (int) $parts[1] : 0;
+		return $expires > time(); // Non-expired lock → a worker is (or very recently was) active.
 	}
 
 	/**
