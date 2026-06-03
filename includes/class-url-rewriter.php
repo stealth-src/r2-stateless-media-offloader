@@ -198,7 +198,7 @@ class URL_Rewriter {
 		}
 		// Match the src attribute only — the leading space means `data-src` and
 		// other *-src attributes are left untouched.
-		return preg_replace_callback(
+		$result = preg_replace_callback(
 			'/(\ssrc=)(["\'])(.*?)\2/i',
 			function ( $matches ) use ( $attachment_id ) {
 				$rewritten = $this->rewrite_same_dir( $attachment_id, $matches[3] );
@@ -210,6 +210,9 @@ class URL_Rewriter {
 			$filtered_image,
 			1
 		);
+		// preg_replace_callback returns null on a PCRE error (e.g. backtrack limit);
+		// fall back to the unmodified tag so a render never emits an empty <img>.
+		return ( null === $result ) ? $filtered_image : $result;
 	}
 
 	/**

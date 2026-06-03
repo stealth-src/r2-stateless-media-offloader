@@ -49,7 +49,8 @@ final class Plugin {
 		}
 
 		// Offload new uploads to R2 (original + all sizes).
-		( new Offloader( $this->client, $this->settings ) )->register();
+		$offloader = new Offloader( $this->client, $this->settings );
+		$offloader->register();
 
 		// Serve offloaded media from R2 / the custom domain (render-time).
 		$rewriter = new URL_Rewriter( $this->client, $this->settings );
@@ -66,6 +67,10 @@ final class Plugin {
 		add_action( 'switch_blog', array( $this->settings, 'flush_request_cache' ) );
 		add_action( 'switch_blog', array( $rewriter, 'flush_request_cache' ) );
 		add_action( 'switch_blog', array( $fallback, 'flush_request_cache' ) );
+		// The offloader's per-request dedupe is keyed by attachment ID, which is
+		// not unique across a network — flush it too so a cached ID from one site
+		// can't suppress a legitimate upload of a same-ID attachment on another.
+		add_action( 'switch_blog', array( $offloader, 'flush_request_cache' ) );
 
 		// Background migration runner (cron-driven) + admin UI.
 		$runner = new Migration_Runner( $this->settings );

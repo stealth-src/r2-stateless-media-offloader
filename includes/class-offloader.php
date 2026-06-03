@@ -37,6 +37,17 @@ class Offloader {
 	}
 
 	/**
+	 * Drop the per-request offload dedupe. Hooked on `switch_blog` (see Plugin):
+	 * the dedupe is keyed by attachment ID, which is NOT unique across a multisite
+	 * network, so a cached ID must not survive a switch to another blog and
+	 * suppress a legitimate upload there. Also bounds memory in a long-lived CLI
+	 * process that switches between many sites.
+	 */
+	public function flush_request_cache() {
+		$this->offloaded = array();
+	}
+
+	/**
 	 * Hook into the media pipeline.
 	 */
 	public function register() {
@@ -78,14 +89,14 @@ class Offloader {
 		}
 
 		// Both wp_generate_attachment_metadata and wp_update_attachment_metadata
-		// fire on a normal upload; once we're committing to upload this
-		// attachment's variants, skip the second firing so we don't push every
-		// object twice. Image edits fire only the update filter (on their own
-		// request, with an empty map here), so they're unaffected.
+		// fire on a normal upload; skip the second firing so we don't push every
+		// object twice. Only a SUCCESSFUL offload records this (see below): if the
+		// first hook's upload fails transiently, the second must still be free to
+		// retry. Image edits fire only the update filter (on their own request,
+		// with an empty map here), so they're unaffected.
 		if ( isset( $this->offloaded[ $attachment_id ] ) ) {
 			return $metadata;
 		}
-		$this->offloaded[ $attachment_id ] = true;
 
 		$original_relative = isset( $metadata['file'] )
 			? $metadata['file']
@@ -100,6 +111,9 @@ class Offloader {
 
 		$upload = $this->upload_variants( $files, $original_key, $headers );
 		if ( $upload['failed'] ) {
+			// Leave the dedupe flag UNSET so the sibling wp_update_attachment_metadata
+			// hook in this same upload request can retry — a transient R2 error on the
+			// first hook must not permanently suppress the second.
 			// A variant failed to reach R2. If this attachment was already synced
 			// (e.g. a re-offload after a new image size was added), the URL
 			// rewriter would keep serving every size from R2 and the missing one
@@ -113,6 +127,10 @@ class Offloader {
 			}
 			return $metadata;
 		}
+
+		// Upload succeeded (no variant errored) — record it so the sibling metadata
+		// filter in this request doesn't re-upload the same objects.
+		$this->offloaded[ $attachment_id ] = true;
 
 		$fully_present = ( $upload['original_uploaded'] && $upload['all_present'] );
 
