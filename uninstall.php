@@ -34,6 +34,7 @@ function r2offload_uninstall_cleanup_site() {
 	delete_post_meta_by_key( '_r2offload_synced' );
 	delete_post_meta_by_key( '_r2offload_synced_at' );
 	delete_post_meta_by_key( '_r2offload_key' );
+	delete_post_meta_by_key( '_r2offload_objects' );
 }
 
 // Options and post-meta are per-site, so on a network clean every site — mirrors

@@ -132,6 +132,17 @@ class Offloader {
 		// filter in this request doesn't re-upload the same objects.
 		$this->offloaded[ $attachment_id ] = true;
 
+		// Record the keys we just uploaded into the attachment's ownership manifest
+		// so delete reaps exactly what this attachment owns (SWR-333). $files maps
+		// local path => key; resolve the uploaded paths back to their keys.
+		$uploaded_keys = array();
+		foreach ( $upload['uploaded_paths'] as $uploaded_path ) {
+			if ( isset( $files[ $uploaded_path ] ) ) {
+				$uploaded_keys[] = $files[ $uploaded_path ];
+			}
+		}
+		Settings::record_objects( $attachment_id, $uploaded_keys );
+
 		$fully_present = ( $upload['original_uploaded'] && $upload['all_present'] );
 
 		// Only mark the attachment offloaded once the ORIGINAL and every size
@@ -279,6 +290,16 @@ class Offloader {
 	 * @return string[]
 	 */
 	private function r2_keys_for( $attachment_id ) {
+		// Prefer the explicit ownership manifest when present: it lists exactly the
+		// keys THIS attachment uploaded/adopted (across edit history and path_prefix
+		// changes), so we never delete an object another attachment owns and never
+		// miss one (SWR-333). Attachments offloaded before the manifest existed have
+		// none — fall through to deriving keys from current metadata.
+		$manifest = get_post_meta( $attachment_id, Settings::META_OBJECTS, true );
+		if ( is_array( $manifest ) && ! empty( $manifest ) ) {
+			return array_values( array_unique( array_filter( array_map( 'strval', $manifest ), 'strlen' ) ) );
+		}
+
 		$relative = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
 		$original = (string) get_post_meta( $attachment_id, Settings::META_KEY, true );
 

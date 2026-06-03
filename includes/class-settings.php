@@ -22,6 +22,12 @@ class Settings {
 	const META_SYNCED    = '_r2offload_synced';
 	const META_SYNCED_AT = '_r2offload_synced_at';
 	const META_KEY       = '_r2offload_key';
+	// Cumulative list of R2 object keys this attachment owns (every key it has
+	// uploaded or adopted, across edit history and path_prefix changes). The
+	// delete path prefers this manifest so it never deletes an object another
+	// attachment owns and never misses one (SWR-333). Absent on attachments
+	// offloaded before it existed — the delete path falls back to deriving keys.
+	const META_OBJECTS   = '_r2offload_objects';
 
 	/**
 	 * Map of setting key => wp-config constant name.
@@ -200,6 +206,32 @@ class Settings {
 			$prefix = trailingslashit( $prefix );
 		}
 		return $prefix . $relative;
+	}
+
+	/**
+	 * Add R2 object keys to an attachment's ownership manifest (META_OBJECTS),
+	 * merged with any already recorded (cumulative across re-offloads, edits and
+	 * path_prefix changes). Shared by the offloader and migrator so the delete
+	 * path can reap exactly the objects an attachment owns — no more, no less
+	 * (SWR-333). No-op for an empty key set.
+	 *
+	 * @param int      $attachment_id
+	 * @param string[] $keys
+	 */
+	public static function record_objects( $attachment_id, array $keys ) {
+		$keys = array_filter( array_map( 'strval', $keys ), 'strlen' );
+		if ( empty( $keys ) ) {
+			return;
+		}
+		$existing = get_post_meta( (int) $attachment_id, self::META_OBJECTS, true );
+		$existing = is_array( $existing ) ? $existing : array();
+		$merged   = array_values( array_unique( array_merge( $existing, $keys ) ) );
+		// Skip the write when nothing changed, to avoid churning post-meta on every
+		// idempotent re-offload.
+		if ( count( $merged ) === count( $existing ) && array() === array_diff( $merged, $existing ) ) {
+			return;
+		}
+		update_post_meta( (int) $attachment_id, self::META_OBJECTS, $merged );
 	}
 
 	/**

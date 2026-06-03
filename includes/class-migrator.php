@@ -183,6 +183,10 @@ class Migrator {
 			// change never rewrites it to the new prefix (which would split it
 			// from where the objects actually live and the rewriter serves).
 			update_post_meta( $attachment_id, self::META_KEY, $this->base_object_key( $attachment_id, $relative ) );
+			// Record every key now confirmed in R2 (uploaded or adopted) into the
+			// ownership manifest so delete reaps exactly what this attachment owns
+			// (SWR-333). With no errors, every built item is present in R2.
+			Settings::record_objects( $attachment_id, array_keys( $items ) );
 			// Preserve the original first-sync timestamp on re-runs that find
 			// every item already present in R2.
 			$first_synced_at = get_post_meta( $attachment_id, self::META_SYNCED_AT, true );
