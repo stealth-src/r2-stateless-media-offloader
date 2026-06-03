@@ -209,7 +209,12 @@ class URL_Rewriter {
 		}
 		$dir = dirname( $key );
 		$dir = ( '.' === $dir || '' === $dir ) ? '' : trailingslashit( $dir );
-		return $this->client->get_object_url( $dir . wp_basename( $local_url ) );
+		// Derive the filename from the URL PATH only — a query string or
+		// fragment (e.g. a cache-buster like ?ver=123) would otherwise be folded
+		// into the basename and the R2 key wouldn't match the stored object.
+		$path     = wp_parse_url( $local_url, PHP_URL_PATH );
+		$basename = wp_basename( is_string( $path ) && '' !== $path ? $path : $local_url );
+		return $this->client->get_object_url( $dir . $basename );
 	}
 
 	/**
