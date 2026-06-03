@@ -71,49 +71,30 @@ class Offloader {
 
 		$cache_control = $this->settings->get( 'cache_control' );
 		$headers       = ( '' !== $cache_control ) ? array( 'Cache-Control' => $cache_control ) : array();
-		$uploaded_paths   = array();
-		$original_uploaded = false;
-		$all_present       = true;
 
-		foreach ( $files as $local_path => $key ) {
-			if ( ! is_readable( $local_path ) ) {
-				// A size file is missing locally (e.g. another stateless plugin
-				// already removed it). Don't claim the attachment is fully
-				// offloaded — the URL rewriter would 404 on that size.
-				$all_present = false;
-				continue;
+		$upload = $this->upload_variants( $files, $original_key, $headers );
+		if ( $upload['failed'] ) {
+			// A variant failed to reach R2. If this attachment was already synced
+			// (e.g. a re-offload after a new image size was added), the URL
+			// rewriter would keep serving every size from R2 and the missing one
+			// 404s. In CDN mode the local copies are intact, so drop the synced
+			// flag to serve everything locally until a later offload restores
+			// full R2 coverage. In Stateless mode the other variants live only in
+			// R2, so un-syncing would 404 them instead — keep serving from R2 and
+			// let the next pass retry. Either way, leave local copies in place.
+			if ( $already_synced && ! $is_stateless ) {
+				delete_post_meta( $attachment_id, Settings::META_SYNCED );
 			}
-			$result = $this->client->upload_file( $local_path, $key, '', $headers );
-			if ( is_wp_error( $result ) ) {
-				// A variant failed to reach R2. If this attachment was already
-				// synced (e.g. a re-offload after a new image size was added),
-				// the URL rewriter would keep serving every size from R2 and the
-				// missing one 404s. In CDN mode the local copies are intact, so
-				// drop the synced flag to serve everything locally until a later
-				// offload restores full R2 coverage. In Stateless mode the other
-				// variants live only in R2, so un-syncing would 404 them instead
-				// — keep serving from R2 and let the next pass retry. Either way,
-				// leave local copies in place; never strand media.
-				if ( $already_synced && ! $is_stateless ) {
-					delete_post_meta( $attachment_id, Settings::META_SYNCED );
-				}
-				return $metadata;
-			}
-			$uploaded_paths[] = $local_path;
-			if ( $key === $original_key ) {
-				$original_uploaded = true;
-			}
+			return $metadata;
 		}
+
+		$fully_present = ( $upload['original_uploaded'] && $upload['all_present'] );
 
 		// Only mark the attachment offloaded once the ORIGINAL and every size
 		// are in R2 — a stray size upload (or a skipped, missing variant) must
 		// not flag media that isn't fully present.
-		if ( $original_uploaded && $all_present ) {
-			update_post_meta( $attachment_id, Settings::META_SYNCED, 1 );
-			update_post_meta( $attachment_id, Settings::META_SYNCED_AT, time() );
-			// Store the original's actual R2 key so readers resolve it
-			// independently of the current path_prefix setting.
-			update_post_meta( $attachment_id, Settings::META_KEY, $original_key );
+		if ( $fully_present ) {
+			$this->mark_synced( $attachment_id, $original_key );
 		}
 
 		// Stateless mode: drop the local copies we just uploaded — each is
@@ -127,19 +108,85 @@ class Offloader {
 		// rewriter stays off and WordPress emits local /uploads URLs, so
 		// deleting the local files would 404 the media. Keep the local copies
 		// (CDN-like) until a custom domain is configured.
-		if (
-			$is_stateless
-			&& $this->settings->serves_public_url()
-			&& ( ( $original_uploaded && $all_present ) || $already_synced )
-		) {
-			foreach ( $uploaded_paths as $local_path ) {
-				if ( file_exists( $local_path ) ) {
-					wp_delete_file( $local_path );
-				}
-			}
+		if ( $is_stateless && $this->settings->serves_public_url() && ( $fully_present || $already_synced ) ) {
+			$this->cleanup_locals( $upload['uploaded_paths'] );
 		}
 
 		return $metadata;
+	}
+
+	/**
+	 * Upload each local variant to R2.
+	 *
+	 * @param array<string,string> $files        local-path => R2-key.
+	 * @param string               $original_key The original's R2 key.
+	 * @param array                $headers      Per-object headers.
+	 * @return array{failed:bool,uploaded_paths:string[],original_uploaded:bool,all_present:bool}
+	 *         On the first WP_Error, returns failed=true; the caller never
+	 *         strands media. all_present is false when any variant was missing
+	 *         locally (skipped) so the attachment isn't marked fully offloaded.
+	 */
+	private function upload_variants( $files, $original_key, $headers ) {
+		$uploaded_paths    = array();
+		$original_uploaded = false;
+		$all_present       = true;
+
+		foreach ( $files as $local_path => $key ) {
+			if ( ! is_readable( $local_path ) ) {
+				// A size file is missing locally (e.g. another stateless plugin
+				// already removed it). Don't claim the attachment is fully
+				// offloaded — the URL rewriter would 404 on that size.
+				$all_present = false;
+				continue;
+			}
+			$result = $this->client->upload_file( $local_path, $key, '', $headers );
+			if ( is_wp_error( $result ) ) {
+				return array(
+					'failed'            => true,
+					'uploaded_paths'    => $uploaded_paths,
+					'original_uploaded' => $original_uploaded,
+					'all_present'       => false,
+				);
+			}
+			$uploaded_paths[] = $local_path;
+			if ( $key === $original_key ) {
+				$original_uploaded = true;
+			}
+		}
+
+		return array(
+			'failed'            => false,
+			'uploaded_paths'    => $uploaded_paths,
+			'original_uploaded' => $original_uploaded,
+			'all_present'       => $all_present,
+		);
+	}
+
+	/**
+	 * Record the synced flag, timestamp, and the original's actual R2 key.
+	 *
+	 * @param int    $attachment_id
+	 * @param string $original_key
+	 */
+	private function mark_synced( $attachment_id, $original_key ) {
+		update_post_meta( $attachment_id, Settings::META_SYNCED, 1 );
+		update_post_meta( $attachment_id, Settings::META_SYNCED_AT, time() );
+		// Store the original's actual R2 key so readers resolve it independently
+		// of the current path_prefix setting.
+		update_post_meta( $attachment_id, Settings::META_KEY, $original_key );
+	}
+
+	/**
+	 * Delete the given local copies (Stateless cleanup of confirmed uploads).
+	 *
+	 * @param string[] $uploaded_paths
+	 */
+	private function cleanup_locals( $uploaded_paths ) {
+		foreach ( $uploaded_paths as $local_path ) {
+			if ( file_exists( $local_path ) ) {
+				wp_delete_file( $local_path );
+			}
+		}
 	}
 
 	/**
