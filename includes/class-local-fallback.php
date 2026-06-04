@@ -213,15 +213,14 @@ class Local_Fallback {
 			// derivative names and a wrong metadata['file']. The caller then falls
 			// back to the original missing path, so the op fails visibly instead of
 			// silently corrupting.
-			if ( @rename( $target['download_to'], $target['publish_to'] ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort publish; failure is handled below.
-				$path = $target['publish_to'];
-			} else {
+			if ( ! @rename( $target['download_to'], $target['publish_to'] ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort publish; failure is handled below.
 				if ( file_exists( $target['download_to'] ) ) {
 					wp_delete_file( $target['download_to'] );
 				}
 				error_log( sprintf( 'r2offload: could not publish restored %s into %s', $key, $target['publish_to'] ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 				return '';
 			}
+			$path = $target['publish_to'];
 		}
 
 		$this->temp_files[]     = $path;

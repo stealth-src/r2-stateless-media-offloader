@@ -219,7 +219,9 @@ class Settings {
 	 * @param string[] $keys
 	 */
 	public static function record_objects( $attachment_id, array $keys ) {
-		$keys = array_filter( array_map( 'strval', $keys ), 'strlen' );
+		$keys = array_filter( array_map( 'strval', $keys ), static function ( $k ) {
+			return '' !== $k;
+		} );
 		if ( empty( $keys ) ) {
 			return;
 		}
