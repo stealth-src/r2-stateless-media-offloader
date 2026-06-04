@@ -17,7 +17,10 @@
  * re-removes them, and metadata['file'] stays correct. When the uploads dir is
  * read-only (truly ephemeral containers), it falls back to the system temp dir:
  * reads still work, but derivatives written off that path are not captured, so
- * regeneration/editing should be done in CDN mode there. The
+ * regeneration/editing should be done in CDN mode there. In that read-only case a
+ * `wp_update_attachment_metadata` guard (guard_temp_metadata) repairs the canonical
+ * metadata pointer before it is saved, so a regenerate/edit fails visibly (logged,
+ * new sizes not stored) instead of silently corrupting the attachment. The
  * `r2offload_restore_to_uploads` filter (default true) can force the temp-dir
  * behaviour. CDN mode and new uploads are unaffected either way.
  *
@@ -89,6 +92,11 @@ class Local_Fallback {
 		add_filter( 'get_attached_file', array( $this, 'ensure_local' ), 10, 2 );
 		add_filter( 'load_image_to_edit_path', array( $this, 'ensure_local_for_edit' ), 10, 3 );
 		add_filter( 'wp_get_original_image_path', array( $this, 'ensure_local_original' ), 10, 2 );
+		// Runs BEFORE the offloader's own wp_update_attachment_metadata hook (10):
+		// repairs a metadata['file'] that a regenerate/edit left pointing into the
+		// system temp dir (read-only-uploads fallback) before it can be persisted or
+		// offloaded. See guard_temp_metadata().
+		add_filter( 'wp_update_attachment_metadata', array( $this, 'guard_temp_metadata' ), 5, 2 );
 		add_action( 'shutdown', array( $this, 'cleanup' ) );
 	}
 
@@ -283,6 +291,52 @@ class Local_Fallback {
 			return false;
 		}
 		return 0 === strpos( $path, wp_normalize_path( trailingslashit( $uploads['basedir'] ) ) );
+	}
+
+	/**
+	 * Safety net for Stateless mode on a READ-ONLY uploads dir (SWR-332).
+	 *
+	 * When uploads can't be written, restore() falls back to the system temp dir,
+	 * so a `wp media regenerate` / in-admin edit runs against a temp path. WordPress
+	 * then derives metadata['file'] from that path — an ABSOLUTE path outside uploads
+	 * — and is about to persist it. Left alone, the attachment's canonical pointer
+	 * would be corrupted and the temp file vanishes on shutdown (broken original).
+	 *
+	 * This repairs metadata['file'] back to the canonical uploads-relative path from
+	 * `_wp_attached_file` (set at upload, never temp-backed) before the value is
+	 * saved or the offloader sees it, and logs the failed derivative write. The newly
+	 * generated sizes still can't be persisted on a read-only uploads dir — that's the
+	 * inherent limitation — but the existing attachment is no longer corrupted.
+	 *
+	 * The trigger is deliberately tight: a normal metadata['file'] is always
+	 * uploads-RELATIVE, so an absolute path that is NOT under the uploads basedir is
+	 * an unambiguous signal of the temp-backed case and can't false-positive on a
+	 * healthy save.
+	 *
+	 * @param mixed $metadata      Attachment metadata about to be saved.
+	 * @param int   $attachment_id
+	 * @return mixed
+	 */
+	public function guard_temp_metadata( $metadata, $attachment_id ) {
+		if ( ! is_array( $metadata ) || empty( $metadata['file'] ) ) {
+			return $metadata;
+		}
+		$file = (string) $metadata['file'];
+		// Healthy saves use an uploads-relative path; only an absolute path outside
+		// uploads indicates the read-only-uploads temp fallback.
+		if ( ! path_is_absolute( $file ) || $this->within_uploads_basedir( $file ) ) {
+			return $metadata;
+		}
+		$canonical = (string) get_post_meta( (int) $attachment_id, '_wp_attached_file', true );
+		if ( '' === $canonical || path_is_absolute( $canonical ) ) {
+			// No trustworthy canonical pointer to fall back to — leave metadata as-is
+			// rather than guess, but still surface the failure below.
+			error_log( sprintf( 'r2offload: regenerate/edit wrote attachment %d to the system temp dir (read-only uploads in Stateless mode) and no canonical _wp_attached_file is available to repair metadata; use CDN mode or make uploads writable.', (int) $attachment_id ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			return $metadata;
+		}
+		$metadata['file'] = $canonical;
+		error_log( sprintf( 'r2offload: regenerate/edit of attachment %d ran against a system-temp restore (read-only uploads in Stateless mode); restored the canonical metadata pointer but the new derivatives could not be stored. Use CDN mode or make uploads writable for in-place edits.', (int) $attachment_id ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		return $metadata;
 	}
 
 	/**
