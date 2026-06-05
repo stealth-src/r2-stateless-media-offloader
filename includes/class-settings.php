@@ -219,13 +219,12 @@ class Settings {
 	 * @param string[] $keys
 	 */
 	public static function record_objects( $attachment_id, array $keys ) {
-		$keys = array_filter( array_map( 'strval', $keys ), static function ( $k ) {
-			return '' !== $k;
-		} );
+		$attachment_id = (int) $attachment_id;
+		$keys          = self::normalize_object_keys( $keys );
 		if ( empty( $keys ) ) {
 			return;
 		}
-		$existing = get_post_meta( (int) $attachment_id, self::META_OBJECTS, true );
+		$existing = get_post_meta( $attachment_id, self::META_OBJECTS, true );
 		$existing = is_array( $existing ) ? $existing : array();
 		$merged   = array_values( array_unique( array_merge( $existing, $keys ) ) );
 		// Skip the write when nothing changed, to avoid churning post-meta on every
@@ -233,7 +232,31 @@ class Settings {
 		if ( count( $merged ) === count( $existing ) && array() === array_diff( $merged, $existing ) ) {
 			return;
 		}
-		update_post_meta( (int) $attachment_id, self::META_OBJECTS, $merged );
+		update_post_meta( $attachment_id, self::META_OBJECTS, $merged );
+	}
+
+	/**
+	 * Normalize an object-key list: cast every entry to a string, drop empties,
+	 * de-duplicate, and re-index. Shared by record_objects() (write side) and the
+	 * offloader's manifest read so both treat the manifest identically.
+	 *
+	 * @param mixed $keys
+	 * @return string[]
+	 */
+	public static function normalize_object_keys( $keys ) {
+		if ( ! is_array( $keys ) ) {
+			return array();
+		}
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map( 'strval', $keys ),
+					static function ( $key ) {
+						return '' !== $key;
+					}
+				)
+			)
+		);
 	}
 
 	/**

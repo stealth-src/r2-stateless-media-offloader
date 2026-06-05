@@ -302,9 +302,7 @@ class Offloader {
 		// none — fall through to deriving keys from current metadata.
 		$manifest = get_post_meta( $attachment_id, Settings::META_OBJECTS, true );
 		if ( is_array( $manifest ) && ! empty( $manifest ) ) {
-			return array_values( array_unique( array_filter( array_map( 'strval', $manifest ), static function ( $k ) {
-				return '' !== $k;
-			} ) ) );
+			return Settings::normalize_object_keys( $manifest );
 		}
 
 		$relative = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
