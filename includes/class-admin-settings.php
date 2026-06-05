@@ -162,8 +162,15 @@ class Admin_Settings {
 		);
 		set_transient( 'settings_errors', get_settings_errors(), 30 );
 
+		// 'settings-updated' (not 'updated') is the WP key that tells
+		// get_settings_errors() to load the transient we just stored. Using
+		// 'updated' instead would cause options-general.php to add a second
+		// "Settings saved." notice on top of ours.
 		wp_safe_redirect(
-			add_query_arg( 'page', self::PAGE_SLUG, admin_url( 'options-general.php' ) )
+			add_query_arg(
+				array( 'page' => self::PAGE_SLUG, 'settings-updated' => '1' ),
+				admin_url( 'options-general.php' )
+			)
 		);
 		exit;
 	}
