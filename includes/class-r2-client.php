@@ -400,15 +400,24 @@ class R2_Client {
 			$extra_headers
 		);
 
-		// Signed-header list (lowercased, sorted). SigV4 requires canonical
-		// header values to be trimmed AND have internal runs of whitespace
-		// collapsed to a single space; otherwise a value with a tab/double space
-		// (e.g. a Cache-Control supplied verbatim via a wp-config constant, which
-		// bypasses sanitisation) would be signed differently from how the server
-		// canonicalises it → SignatureDoesNotMatch.
+		// Canonicalise every header value ONCE, in place, so the exact bytes we
+		// sign are the exact bytes we send. SigV4 requires trimmed values with
+		// internal whitespace runs collapsed to a single space; otherwise a value
+		// with a tab/double space (e.g. a Cache-Control supplied verbatim via a
+		// wp-config constant, which bypasses the settings sanitiser) would be
+		// signed differently from how the server canonicalises it →
+		// SignatureDoesNotMatch. Because \s also matches CR/LF, this doubles as a
+		// header-injection guard: any newline in an operator-supplied value is
+		// flattened before it can reach the HTTP transport (defense-in-depth — WP's
+		// transports already reject CR/LF in header values).
+		foreach ( $headers as $k => $v ) {
+			$headers[ $k ] = preg_replace( '/\s+/', ' ', trim( (string) $v ) );
+		}
+
+		// Signed-header list (lowercased, sorted), from the now-canonical values.
 		$lower = array();
 		foreach ( $headers as $k => $v ) {
-			$lower[ strtolower( $k ) ] = preg_replace( '/\s+/', ' ', trim( (string) $v ) );
+			$lower[ strtolower( $k ) ] = $v;
 		}
 		ksort( $lower );
 		$signed_headers    = implode( ';', array_keys( $lower ) );
