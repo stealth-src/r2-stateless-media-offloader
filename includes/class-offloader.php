@@ -110,6 +110,22 @@ class Offloader {
 		$headers       = ( '' !== $cache_control ) ? array( 'Cache-Control' => $cache_control ) : array();
 
 		$upload = $this->upload_variants( $files, $original_key, $headers );
+
+		// Record every key that actually reached R2 into the attachment's ownership
+		// manifest — BEFORE the partial-failure bail below. Even when a sibling
+		// variant fails, the objects that DID upload exist and this attachment owns
+		// them, so a later delete must still reap them (SWR-333); recording only on
+		// full success would orphan the uploaded subset. $files maps local path =>
+		// key; resolve the uploaded paths back to their keys. record_objects() is a
+		// no-op on an empty list.
+		$uploaded_keys = array();
+		foreach ( $upload['uploaded_paths'] as $uploaded_path ) {
+			if ( isset( $files[ $uploaded_path ] ) ) {
+				$uploaded_keys[] = $files[ $uploaded_path ];
+			}
+		}
+		Settings::record_objects( $attachment_id, $uploaded_keys );
+
 		if ( $upload['failed'] ) {
 			// Leave the dedupe flag UNSET so the sibling wp_update_attachment_metadata
 			// hook in this same upload request can retry — a transient R2 error on the
@@ -131,17 +147,6 @@ class Offloader {
 		// Upload succeeded (no variant errored) — record it so the sibling metadata
 		// filter in this request doesn't re-upload the same objects.
 		$this->offloaded[ $attachment_id ] = true;
-
-		// Record the keys we just uploaded into the attachment's ownership manifest
-		// so delete reaps exactly what this attachment owns (SWR-333). $files maps
-		// local path => key; resolve the uploaded paths back to their keys.
-		$uploaded_keys = array();
-		foreach ( $upload['uploaded_paths'] as $uploaded_path ) {
-			if ( isset( $files[ $uploaded_path ] ) ) {
-				$uploaded_keys[] = $files[ $uploaded_path ];
-			}
-		}
-		Settings::record_objects( $attachment_id, $uploaded_keys );
 
 		$fully_present = ( $upload['original_uploaded'] && $upload['all_present'] );
 
