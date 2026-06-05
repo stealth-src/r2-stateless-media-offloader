@@ -93,13 +93,24 @@ jQuery(function($){
 	var $log = $('#r2offload-mig-log');
 	var $logDetails = $('#r2offload-mig-log-details');
 	var polling = false;
-	var lastLogCount = 0; // Track how many entries the log panel already shows.
+	// Track the last rendered tail entry to detect ring-buffer rotation (the
+	// server caps log_entries at 200; once full, length stays 200 while content
+	// keeps sliding, so comparing length alone would stop updates).
+	var lastLogTail = null;
 
 	function renderLog(entries) {
-		if ( !$log.length || !entries || !entries.length ) { return; }
-		// Only re-render if the server sent more lines than we last showed.
-		if ( entries.length <= lastLogCount ) { return; }
-		lastLogCount = entries.length;
+		if ( !$log.length ) { return; }
+		if ( !entries || !entries.length ) {
+			// Empty array signals a fresh start — clear any stale content.
+			if ( lastLogTail !== null ) {
+				$log.text('');
+				lastLogTail = null;
+			}
+			return;
+		}
+		var tail = entries[ entries.length - 1 ];
+		if ( tail === lastLogTail ) { return; } // Content unchanged.
+		lastLogTail = tail;
 		// Plain-text only — never inject as HTML.
 		$log.text( entries.join('\n') );
 		// Auto-scroll to the newest entry.
@@ -164,14 +175,14 @@ jQuery(function($){
 			}
 		}
 
-		// Activity log panel — open automatically the first time entries arrive,
-		// stay open thereafter.
-		if ( s.log_entries && s.log_entries.length ) {
-			if ( $logDetails.length && !$logDetails.prop('open') ) {
-				$logDetails.prop('open', true);
-			}
-			renderLog( s.log_entries );
+		// Activity log panel — renderLog always runs so an empty log_entries
+		// array on a fresh start clears stale DOM content from the previous run.
+		// Auto-open the panel the first time real entries arrive.
+		var logEntries = (s.log_entries && s.log_entries.length) ? s.log_entries : [];
+		if ( logEntries.length && $logDetails.length && !$logDetails.prop('open') ) {
+			$logDetails.prop('open', true);
 		}
+		renderLog( logEntries );
 
 		if (s.mode) { $mode.val(s.mode); }
 		// Buttons: Start only when idle/done; Pause/Stop only when a run is
@@ -201,7 +212,6 @@ jQuery(function($){
 
 	function clearRunningUI(){ $spinner.removeClass('is-active'); $bar.removeClass('r2offload-running'); $txtWrap.attr('aria-live', 'polite'); }
 	$start.on('click', function(){
-		lastLogCount = 0; // Fresh run — let the log panel repopulate from scratch.
 		$.post(ajaxurl, { action:'r2offload_migrate_start', nonce:R2OFFLOAD_MIG.nonce, mode:$mode.val() })
 			.done(function(res){ if(res && res.success){ render(res.data); startPolling(); } else { showError(res, 'Could not start the migration.'); } })
 			.fail(function(){ clearRunningUI(); $txt.text('Connection lost — reload or try again.'); });
