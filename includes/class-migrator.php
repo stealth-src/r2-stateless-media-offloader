@@ -631,6 +631,8 @@ class Migrator {
 		// plugins' filters (e.g. wp-stateless serving from GCS) still apply.
 		// try/finally so a throwing filter can't strand the suppress counter and
 		// leave rewriting disabled for the rest of the request.
+		$base     = '';
+		$size_url = '';
 		URL_Rewriter::suppress( true );
 		try {
 			$base = wp_get_attachment_url( $attachment_id );
@@ -640,7 +642,6 @@ class Migrator {
 			// THIS file (basename match): a deregistered size makes
 			// wp_get_attachment_image_src fall back to another size / the full
 			// image, which we must NOT fetch as this size's source.
-			$size_url = '';
 			if ( '' !== $size && 'original_image' !== $size ) {
 				$src = wp_get_attachment_image_src( $attachment_id, $size );
 				if ( is_array( $src ) && ! empty( $src[0] ) && $this->url_basename( $src[0] ) === $item['filename'] ) {

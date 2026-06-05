@@ -124,7 +124,7 @@ $r2offload_has_run = $r2offload_running || $r2offload_resumable;
 	</style>
 	<div style="max-width:46em;">
 		<div style="background:#e2e4e7;border-radius:3px;overflow:hidden;height:24px;">
-			<div id="r2offload-mig-bar" style="background:#2271b1;color:#fff;height:24px;line-height:24px;text-align:center;width:0;white-space:nowrap;transition:width .3s;">0%</div>
+			<div id="r2offload-mig-bar" style="background-color:#2271b1;color:#fff;height:24px;line-height:24px;text-align:center;width:0;white-space:nowrap;transition:width .3s;">0%</div>
 		</div>
 		<p id="r2offload-mig-text" aria-live="polite" style="margin-top:.5em;display:flex;align-items:center;gap:4px;">
 			<span class="spinner" id="r2offload-mig-spinner" style="float:none;margin:0;"></span>

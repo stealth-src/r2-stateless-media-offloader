@@ -169,7 +169,7 @@ jQuery(function($){
 				if(res && res.success){
 					render(res.data);
 					if(res.data.running){ setTimeout(poll, 1500); } else { polling = false; }
-				} else { polling = false; $spinner.removeClass('is-active'); $bar.removeClass('r2offload-running'); }
+				} else { polling = false; $spinner.removeClass('is-active'); $bar.removeClass('r2offload-running'); $txt.text('Polling error — reload or click a button to retry.'); }
 			})
 			.fail(function(){ polling = false; $spinner.removeClass('is-active'); $bar.removeClass('r2offload-running'); $txt.text('Connection lost — reload or click a button to retry.'); });
 	}
