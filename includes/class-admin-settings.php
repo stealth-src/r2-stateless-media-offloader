@@ -149,14 +149,21 @@ class Admin_Settings {
 		// already sent) reads the new values rather than the stale ones.
 		$this->settings->flush_request_cache();
 
+		// Queue a success notice via the Settings API transient so it survives the
+		// redirect and is displayed exactly once. We deliberately do NOT add ?updated
+		// or ?settings-updated to the redirect URL — WordPress itself detects those
+		// parameters and adds its own "Settings saved." to the same queue, which
+		// would produce a duplicate banner.
+		add_settings_error(
+			'r2offload_settings',
+			'r2offload_saved',
+			__( 'Settings saved.', 'r2-stateless-media-offload' ),
+			'success'
+		);
+		set_transient( 'settings_errors', get_settings_errors(), 30 );
+
 		wp_safe_redirect(
-			add_query_arg(
-				array(
-					'page'    => self::PAGE_SLUG,
-					'updated' => 'true',
-				),
-				admin_url( 'options-general.php' )
-			)
+			add_query_arg( 'page', self::PAGE_SLUG, admin_url( 'options-general.php' ) )
 		);
 		exit;
 	}
