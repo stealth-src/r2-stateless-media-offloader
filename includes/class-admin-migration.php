@@ -93,7 +93,9 @@ jQuery(function($){
 	var $log = $('#r2offload-mig-log');
 	var $logDetails = $('#r2offload-mig-log-details');
 	var polling = false;
-	var pollFailCount = 0; // Consecutive AJAX failures; triggers auto-pause after 3.
+	var pollFailCount = 0;        // Consecutive AJAX failures; triggers auto-pause after threshold.
+	var POLL_MAX_RETRIES    = 3;  // Auto-pause after this many consecutive poll failures.
+	var POLL_RETRY_DELAY_MS = 2000; // Delay between retry attempts (ms).
 	// Track the last rendered tail entry to detect ring-buffer rotation (the
 	// server caps log_entries at 200; once full, length stays 200 while content
 	// keeps sliding, so comparing length alone would stop updates).
@@ -146,7 +148,7 @@ jQuery(function($){
 			'  ·  updated ' + (s.updated || 0) +
 			'  ·  adopted ' + (s.adopted || 0) +
 			'  ·  skipped ' + s.skipped +
-			'  ·  errors ' + s.errors
+			'  ·  errors ' + (s.errored || 0)
 		);
 		$txtWrap.attr('aria-live', s.running ? 'off' : 'polite'); // Suppress aria-live chatter during rapid updates.
 
@@ -209,9 +211,9 @@ jQuery(function($){
 			})
 			.fail(function(){
 				pollFailCount++;
-				if ( pollFailCount < 3 ) {
+				if ( pollFailCount < POLL_MAX_RETRIES ) {
 					// Brief network hiccup — retry a couple of times before acting.
-					setTimeout(poll, 2000);
+					setTimeout(poll, POLL_RETRY_DELAY_MS);
 					return;
 				}
 				// Persistent connection loss — auto-pause so the server-side run

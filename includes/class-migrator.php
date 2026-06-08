@@ -271,8 +271,9 @@ class Migrator {
 			'updated'     => 0,
 			'adopted'     => 0,
 			'skipped'     => 0,
+			'errored'     => 0, // Attachment-level error count; processed === sum of all five outcomes.
 			'bytes'       => 0,
-			'errors'      => array(),
+			'errors'      => array(), // Per-item error message strings for the UI.
 			'log'         => array(), // Per-item log lines for the UI activity panel.
 			'next_cursor' => (string) $cursor_id,
 			'done'        => true,
@@ -301,14 +302,23 @@ class Migrator {
 			$aggregate['bytes']      += (int) $res['bytes'];
 			$aggregate['next_cursor'] = (string) $id;
 
-			// Count outcomes at ATTACHMENT level (one per attachment, not one per
-			// size variant) so "processed" and the outcome totals stay comparable in
-			// the UI. bytes stays variant-level (real data moved). Primary outcome:
-			// uploaded > updated > adopted > skipped; missing-source and errors are separate.
+			// Count outcomes at ATTACHMENT level — one per attachment, never per
+			// size variant — so processed === uploaded + updated + adopted + skipped
+			// + errored always holds in the UI. bytes stays variant-level (real data
+			// moved). Priority: errors → missing-source → uploaded → updated →
+			// adopted → skipped. missing is checked before positive outcomes so an
+			// attachment with some variants uploaded and some missing-source is not
+			// counted as "uploaded" (META_SYNCED was not written in that case).
 			if ( ! empty( $res['errors'] ) ) {
+				$aggregate['errored'] += 1;
 				foreach ( $res['errors'] as $err ) {
 					$aggregate['errors'][] = sprintf( '[#%d] %s', $id, $err );
 				}
+			} elseif ( isset( $res['missing'] ) && (int) $res['missing'] > 0 ) {
+				// One or more variants' source returned 404/410 — attachment is
+				// incomplete regardless of any other variants that may have uploaded.
+				// META_SYNCED was not written; file not put in R2.
+				$aggregate['skipped'] += 1;
 			} elseif ( (int) $res['uploaded'] > 0 ) {
 				$aggregate['uploaded'] += 1;
 			} elseif ( (int) $res['updated'] > 0 ) {
@@ -316,8 +326,6 @@ class Migrator {
 			} elseif ( (int) $res['adopted'] > 0 ) {
 				$aggregate['adopted'] += 1;
 			} else {
-				// Covers both true skips (already in R2) and missing-source (file
-				// gone everywhere) — neither has anything to do in R2.
 				$aggregate['skipped'] += 1;
 			}
 
@@ -539,15 +547,28 @@ class Migrator {
 			}
 			$downloaded = $this->download_to_tempfile( $url );
 			if ( is_wp_error( $downloaded ) ) {
-				// A 4xx response means the source file is gone (deleted, moved, or
-				// never there) — treat as "missing source" rather than a retryable
-				// error so the attachment doesn't block migration completion on every
-				// run. META_SYNCED is not written (nothing was put in R2).
-				if ( preg_match( '/^http_4\d\d$/', (string) $downloaded->get_error_code() ) ) {
-					$result['missing'] += 1;
-				} else {
-					$result['errors'][] = sprintf( '%s: %s', $key, $downloaded->get_error_message() );
+				// download_url() returns the error code 'http_404' for ANY non-200
+				// response (WP Trac #60564). Extract the real HTTP status from
+				// error_data['code']; fall back to parsing the error code string only
+				// if error_data is absent (older WP / non-download_url paths).
+				$err_data    = $downloaded->get_error_data();
+				$http_status = ( is_array( $err_data ) && isset( $err_data['code'] ) )
+					? (int) $err_data['code']
+					: 0;
+				if ( 0 === $http_status ) {
+					$code_str = (string) $downloaded->get_error_code();
+					if ( preg_match( '/^http_(\d+)$/', $code_str, $m ) ) {
+						$http_status = (int) $m[1];
+					}
 				}
+				// Only 404 (Not Found) and 410 (Gone) definitively mean the source
+				// file is gone. Other 4xx (401/403/429) and 5xx are potentially
+				// recoverable — treat as errors so the migration can retry them.
+				if ( 404 === $http_status || 410 === $http_status ) {
+					$result['missing'] += 1;
+					return;
+				}
+				$result['errors'][] = sprintf( '%s: %s', $key, $downloaded->get_error_message() );
 				return;
 			}
 			$tmp        = $downloaded; // Narrowed to string by the is_wp_error() guard above.

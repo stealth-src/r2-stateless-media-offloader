@@ -136,6 +136,7 @@ class Migration_Runner {
 			'updated'     => 0,
 			'adopted'     => 0,
 			'skipped'     => 0,
+			'errored'     => 0,
 			'errors'      => 0,
 			'bytes'       => 0,
 			'total'       => 0,
@@ -444,6 +445,7 @@ class Migration_Runner {
 				$state['updated']   += (int) $result['updated'];
 				$state['adopted']   += (int) $result['adopted'];
 				$state['skipped']   += (int) $result['skipped'];
+				$state['errored']   += (int) $result['errored'];
 				$state['errors']    += count( $result['errors'] );
 				$state['pass_errors'] += count( $result['errors'] );
 				$state['bytes']     += (int) $result['bytes'];
@@ -515,6 +517,7 @@ class Migration_Runner {
 				$state['processed']     = 0;
 				$state['adopted']       = 0;
 				$state['skipped']       = 0;
+				$state['errored']       = 0;
 				$state['errors']        = 0;
 				$state['recent_errors'] = array(); // Show only the final pass's errors.
 				$state['cursor']        = '';    // Re-scan from the first attachment.
