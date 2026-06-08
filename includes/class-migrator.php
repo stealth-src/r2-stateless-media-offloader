@@ -547,23 +547,21 @@ class Migrator {
 			}
 			$downloaded = $this->download_to_tempfile( $url );
 			if ( is_wp_error( $downloaded ) ) {
-				// download_url() returns the error code 'http_404' for ANY non-200
-				// response (WP Trac #60564). Extract the real HTTP status from
-				// error_data['code']; fall back to parsing the error code string only
-				// if error_data is absent (older WP / non-download_url paths).
+				// download_url() always returns error code 'http_404' for ANY
+				// non-200 response (WP Trac #60564). The only reliable source for
+				// the actual HTTP status is error_data['code']. Do NOT fall back to
+				// parsing the error code string: since core always emits 'http_404',
+				// the string parse would misclassify 403/5xx failures as missing
+				// source (404) and silently skip them instead of keeping them
+				// retryable. If error_data is absent, $http_status stays 0 and we
+				// fall through to $result['errors'] — safe conservative default.
 				$err_data    = $downloaded->get_error_data();
 				$http_status = ( is_array( $err_data ) && isset( $err_data['code'] ) )
 					? (int) $err_data['code']
 					: 0;
-				if ( 0 === $http_status ) {
-					$code_str = (string) $downloaded->get_error_code();
-					if ( preg_match( '/^http_(\d+)$/', $code_str, $m ) ) {
-						$http_status = (int) $m[1];
-					}
-				}
 				// Only 404 (Not Found) and 410 (Gone) definitively mean the source
-				// file is gone. Other 4xx (401/403/429) and 5xx are potentially
-				// recoverable — treat as errors so the migration can retry them.
+				// file is gone. Other 4xx (401/403/429), 5xx, and unknown (0) are
+				// potentially recoverable — treat as errors so they can be retried.
 				if ( 404 === $http_status || 410 === $http_status ) {
 					$result['missing'] += 1;
 					return;
