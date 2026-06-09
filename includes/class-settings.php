@@ -415,15 +415,23 @@ class Settings {
 	 * @return bool
 	 */
 	public function secret_decrypt_failed() {
-		if ( $this->is_constant( 'secret_key' ) ) {
-			return false; // Constant is plaintext — never "undecryptable".
-		}
 		$stored = $this->stored();
 		$raw    = isset( $stored['secret_key'] ) ? (string) $stored['secret_key'] : '';
-		if ( '' === $raw ) {
-			return false; // Nothing stored.
+		// Nothing stored, or value is already plaintext — no decrypt needed.
+		if ( '' === $raw || 0 !== strpos( $raw, 'r2enc:' ) ) {
+			return false;
 		}
-		return '' === $this->decrypt( $raw ); // Stored, but the blob cannot be decrypted.
+		// Blob decrypts successfully — all good.
+		if ( '' !== $this->decrypt( $raw ) ) {
+			return false;
+		}
+		// Undecryptable blob. If R2OFFLOAD_SECRET_KEY is defined, the constant
+		// is already serving as the active credential (get() falls through to it),
+		// so R2 is operational — don't surface the re-enter notice.
+		if ( isset( $this->constants['secret_key'] ) && defined( $this->constants['secret_key'] ) ) {
+			return false;
+		}
+		return true;
 	}
 
 	/**
