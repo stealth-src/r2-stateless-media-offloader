@@ -40,6 +40,7 @@ class Admin_Migration {
 		add_action( 'wp_ajax_r2offload_migrate_stop', array( $this, 'ajax_stop' ) );
 		add_action( 'wp_ajax_r2offload_migrate_cancel', array( $this, 'ajax_cancel' ) );
 		add_action( 'wp_ajax_r2offload_migrate_status', array( $this, 'ajax_status' ) );
+		add_action( 'wp_ajax_r2offload_migrate_retry', array( $this, 'ajax_retry' ) );
 	}
 
 	/**
@@ -72,6 +73,7 @@ class Admin_Migration {
 				'pause'     => __( 'Pause', 'r2-stateless-media-offload' ),
 				'resume'    => __( 'Resume', 'r2-stateless-media-offload' ),
 				'errorsLbl' => __( 'Recent errors', 'r2-stateless-media-offload' ),
+				'retryLbl'  => __( 'Retry', 'r2-stateless-media-offload' ),
 				'migrated'  => __( 'Migrated to R2', 'r2-stateless-media-offload' ),
 				'remaining' => __( 'remaining', 'r2-stateless-media-offload' ),
 			)
@@ -164,14 +166,37 @@ jQuery(function($){
 			}
 		}
 
-		// Recent error messages — rendered as plain text (never HTML), so an R2
-		// error body can't inject markup.
+		// Recent error messages — text nodes only (never innerHTML), so an R2
+		// error body can't inject markup. Retry button shown per-item when the
+		// message carries a [#ID] prefix and the migration is not running.
 		if ( $errs.length ) {
 			var list = (s.recent_errors && s.recent_errors.length) ? s.recent_errors : [];
 			if ( list.length ) {
 				var $h = $('<p>').css({margin:'0 0 .25em', fontWeight:'600'}).text(R2OFFLOAD_MIG.errorsLbl + ' (' + (s.errors || 0) + '):');
 				var $ul = $('<ul>').css({margin:0, paddingLeft:'1.2em'});
-				list.forEach(function(msg){ $ul.append($('<li>').text(msg)); });
+				list.forEach(function(msg){
+					var $li  = $('<li>').css({display:'flex', alignItems:'baseline', gap:'6px'});
+					var $txt = $('<span>').text(msg);
+					$li.append($txt);
+					var idMatch = msg.match(/^\[#(\d+)\]/);
+					if ( idMatch ) {
+						var attId = idMatch[1];
+						var $btn  = $('<button type="button">').text(R2OFFLOAD_MIG.retryLbl)
+							.css({fontSize:'0.75em', padding:'1px 6px', cursor:'pointer', flexShrink:0})
+							.prop('disabled', !!s.running)
+							.on('click', function(){
+								$btn.prop('disabled', true).text('…');
+								$.post(ajaxurl, { action:'r2offload_migrate_retry', nonce:R2OFFLOAD_MIG.nonce, attachment_id:attId })
+									.done(function(res){
+										if(res && res.success){ render(res.data); }
+										else { $btn.prop('disabled', false).text(R2OFFLOAD_MIG.retryLbl); }
+									})
+									.fail(function(){ $btn.prop('disabled', false).text(R2OFFLOAD_MIG.retryLbl); });
+							});
+						$li.append($btn);
+					}
+					$ul.append($li);
+				});
 				$errs.empty().append($h).append($ul).show();
 			} else {
 				$errs.hide().empty();
@@ -376,6 +401,29 @@ JS;
 			$state = $this->runner->run_one_batch( Migration_Runner::AJAX_BATCH_MAX_SECONDS );
 		}
 		$this->respond( $state );
+	}
+
+	/**
+	 * AJAX: retry a single attachment that previously errored.
+	 */
+	public function ajax_retry() {
+		$this->guard();
+		$state = $this->runner->state();
+		if ( ! empty( $state['running'] ) ) {
+			wp_send_json_error( array( 'message' => __( 'Cannot retry while migration is running.', 'r2-stateless-media-offload' ) ) );
+			return; // wp_send_json_error already exits; explicit for static analysis.
+		}
+		if ( ! $this->settings->is_configured() ) {
+			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
+			return; // wp_send_json_error already exits; explicit for static analysis.
+		}
+		$raw_id        = isset( $_POST['attachment_id'] ) ? $_POST['attachment_id'] : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in guard().
+		$attachment_id = (int) $raw_id;
+		if ( $attachment_id < 1 ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid attachment ID.', 'r2-stateless-media-offload' ) ) );
+			return; // wp_send_json_error already exits; explicit for static analysis.
+		}
+		$this->respond( $this->runner->retry_attachment( $attachment_id ) );
 	}
 
 	/**

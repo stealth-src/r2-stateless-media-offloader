@@ -260,6 +260,81 @@ class Migration_Runner {
 	}
 
 	/**
+	 * Retry a single attachment that previously errored. Runs migrate_attachment()
+	 * directly (outside the batch loop), updates the stored state's error counters
+	 * and recent_errors ring buffer, then persists and returns the new state.
+	 *
+	 * Must only be called when the migration is not actively running — the caller
+	 * is responsible for that guard.
+	 *
+	 * @param int $attachment_id
+	 * @return array Updated state (same shape as state()).
+	 */
+	public function retry_attachment( $attachment_id ) {
+		$attachment_id = (int) $attachment_id;
+
+		wp_cache_delete( self::STATE_OPTION, 'options' );
+		$state = get_option( self::STATE_OPTION, array() );
+		if ( ! is_array( $state ) ) {
+			$state = array();
+		}
+
+		$migrator = new Migrator();
+		$migrator->set_download_timeout( 300 );
+		$res = $migrator->migrate_attachment( $attachment_id );
+
+		// Remove prior error messages for this attachment from the ring buffer.
+		$prefix     = '[#' . $attachment_id . '] ';
+		$old_recent = isset( $state['recent_errors'] ) && is_array( $state['recent_errors'] )
+			? $state['recent_errors'] : array();
+		$removed    = 0;
+		$kept       = array();
+		foreach ( $old_recent as $msg ) {
+			if ( 0 === strpos( (string) $msg, $prefix ) ) {
+				++$removed;
+			} else {
+				$kept[] = $msg;
+			}
+		}
+		// Mirror the per-message decrement from the original batch run.
+		$state['errors'] = max( 0, (int) ( isset( $state['errors'] ) ? $state['errors'] : 0 ) - $removed );
+
+		if ( ! empty( $res['errors'] ) ) {
+			// Still failing — replace with the fresh error messages.
+			$new_msgs = array_map(
+				function ( $err ) use ( $prefix ) {
+					return $prefix . $err;
+				},
+				$res['errors']
+			);
+			$state['recent_errors'] = $this->append_recent_errors(
+				array( 'recent_errors' => $kept ),
+				$new_msgs
+			);
+			$state['errors'] = (int) $state['errors'] + count( $new_msgs );
+			// errored count unchanged — still one errored attachment.
+		} else {
+			// Retry succeeded — transition this attachment out of the error bucket.
+			$state['recent_errors'] = $kept;
+			$state['errored']       = max( 0, (int) ( isset( $state['errored'] ) ? $state['errored'] : 0 ) - 1 );
+			// Increment the appropriate outcome counter (preserves the
+			// processed === uploaded + updated + adopted + skipped + errored invariant).
+			if ( (int) $res['uploaded'] > 0 ) {
+				$state['uploaded'] = (int) ( isset( $state['uploaded'] ) ? $state['uploaded'] : 0 ) + 1;
+			} elseif ( (int) $res['updated'] > 0 ) {
+				$state['updated'] = (int) ( isset( $state['updated'] ) ? $state['updated'] : 0 ) + 1;
+			} elseif ( (int) $res['adopted'] > 0 ) {
+				$state['adopted'] = (int) ( isset( $state['adopted'] ) ? $state['adopted'] : 0 ) + 1;
+			} else {
+				$state['skipped'] = (int) ( isset( $state['skipped'] ) ? $state['skipped'] : 0 ) + 1;
+			}
+		}
+
+		update_option( self::STATE_OPTION, $state, false );
+		return $state;
+	}
+
+	/**
 	 * Count attachments already registered as offloaded to R2 (the "migrated"
 	 * number for the UI). A single indexed COUNT on the postmeta meta_key index —
 	 * cheap enough to call on each status poll.
