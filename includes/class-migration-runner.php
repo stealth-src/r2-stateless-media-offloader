@@ -330,7 +330,14 @@ class Migration_Runner {
 				return $state;
 			}
 			// Mirror the per-message decrement from the original batch run.
-			$state['errors'] = max( 0, (int) $state['errors'] - $removed );
+			// pass_errors too: the batch path increments it per error message and
+			// the pass-transition logic uses it to decide whether a retry re-scan
+			// is needed — leaving it positive after manual retries would trigger
+			// an extra pass (and counter reset) for errors already fixed here.
+			// recent_errors is cleared on every pass transition, so $removed only
+			// ever covers current-pass messages.
+			$state['errors']      = max( 0, (int) $state['errors'] - $removed );
+			$state['pass_errors'] = max( 0, (int) $state['pass_errors'] - $removed );
 
 			if ( ! empty( $res['errors'] ) ) {
 				// Still failing — replace with the fresh error messages.
@@ -344,7 +351,8 @@ class Migration_Runner {
 					array( 'recent_errors' => $kept ),
 					$new_msgs
 				);
-				$state['errors'] = (int) $state['errors'] + count( $new_msgs );
+				$state['errors']      = (int) $state['errors'] + count( $new_msgs );
+				$state['pass_errors'] = (int) $state['pass_errors'] + count( $new_msgs );
 				// errored count unchanged — still one errored attachment.
 			} else {
 				// Retry succeeded — transition this attachment out of the error

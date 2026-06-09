@@ -422,7 +422,11 @@ JS;
 			wp_send_json_error( array( 'message' => __( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offload' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
-		if ( ! $this->settings->is_configured() ) {
+		// A dry-run never needed credentials and the retry runs in the stored
+		// mode, so let dry-run retries through without them — matching
+		// ajax_start()/ajax_resume(). Upload/verify/force retries still require
+		// configuration.
+		if ( 'dry-run' !== ( isset( $state['mode'] ) ? (string) $state['mode'] : '' ) && ! $this->settings->is_configured() ) {
 			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
