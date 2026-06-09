@@ -133,10 +133,11 @@ class Admin_Settings {
 		} elseif ( isset( $new['secret_key'] ) && 0 === strpos( (string) $new['secret_key'], 'r2enc:' ) ) {
 			// Auto-migrate: a legacy encrypted blob is still sitting in the DB.
 			// Decrypt it now and re-save as plaintext so this settings save does the
-			// migration even when the admin didn't re-type the key. If decryption
-			// fails (salt already rotated), leave the blob as-is — the user must
-			// re-enter the key manually to recover.
-			$migrated = $this->settings->get( 'secret_key' );
+			// migration even when the admin didn't re-type the key.
+			// Use decrypt() directly — NOT get() — so a constant value can never
+			// bleed into the DB when decryption fails. If decryption returns '' (salt
+			// already rotated), leave the blob as-is; the user must re-enter the key.
+			$migrated = $this->settings->decrypt( (string) $new['secret_key'] );
 			if ( '' !== $migrated ) {
 				$new['secret_key'] = $migrated;
 			}

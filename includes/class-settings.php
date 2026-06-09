@@ -112,13 +112,15 @@ class Settings {
 
 	/**
 	 * Decrypt a stored secret. Values without the 'r2enc:' marker are returned
-	 * as-is (plaintext). Only used as a migration read path for blobs written
-	 * by the old encrypt_secret() implementation.
+	 * as-is (plaintext). Returns '' when the blob cannot be decrypted (e.g. the
+	 * auth salt was rotated) — never falls back to constants or defaults.
+	 * Public so callers that need decrypt-only (no constant fallback) can use it
+	 * directly.
 	 *
 	 * @param string $stored
 	 * @return string
 	 */
-	private function decrypt( $stored ) {
+	public function decrypt( $stored ) {
 		// No marker → legitimate legacy plaintext, return as-is.
 		if ( 0 !== strpos( $stored, 'r2enc:' ) ) {
 			return $stored;
@@ -421,7 +423,7 @@ class Settings {
 		if ( '' === $raw ) {
 			return false; // Nothing stored.
 		}
-		return '' === (string) $this->get( 'secret_key' ); // Stored, but decrypts to empty.
+		return '' === $this->decrypt( $raw ); // Stored, but the blob cannot be decrypted.
 	}
 
 	/**
