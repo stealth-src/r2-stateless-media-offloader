@@ -74,6 +74,7 @@ class Admin_Migration {
 				'resume'    => __( 'Resume', 'r2-stateless-media-offload' ),
 				'errorsLbl' => __( 'Recent errors', 'r2-stateless-media-offload' ),
 				'retryLbl'  => __( 'Retry', 'r2-stateless-media-offload' ),
+				'retryAllLbl' => __( 'Retry All', 'r2-stateless-media-offload' ),
 				'migrated'  => __( 'Migrated to R2', 'r2-stateless-media-offload' ),
 				'remaining' => __( 'remaining', 'r2-stateless-media-offload' ),
 			)
@@ -174,6 +175,7 @@ jQuery(function($){
 			if ( list.length ) {
 				var $h = $('<p>').css({margin:'0 0 .25em', fontWeight:'600'}).text(R2OFFLOAD_MIG.errorsLbl + ' (' + (s.errors || 0) + '):');
 				var $ul = $('<ul>').css({margin:0, paddingLeft:'1.2em'});
+				var retryableIds = [];
 				list.forEach(function(msg){
 					var $li  = $('<li>').css({display:'flex', alignItems:'baseline', gap:'6px'});
 					var $txt = $('<span>').text(msg);
@@ -181,6 +183,7 @@ jQuery(function($){
 					var idMatch = msg.match(/^\[#(\d+)\]/);
 					if ( idMatch ) {
 						var attId = idMatch[1];
+						retryableIds.push(attId);
 						var $btn  = $('<button type="button">').text(R2OFFLOAD_MIG.retryLbl)
 							.css({fontSize:'0.75em', padding:'1px 6px', cursor:'pointer', flexShrink:0})
 							.prop('disabled', !!s.running)
@@ -197,7 +200,28 @@ jQuery(function($){
 					}
 					$ul.append($li);
 				});
-				$errs.empty().append($h).append($ul).show();
+
+				// Retry All — fires each retryable ID sequentially, renders once done.
+				var $footer = $('<p>').css({margin:'.5em 0 0'});
+				if ( retryableIds.length > 1 && !s.running ) {
+					var $retryAll = $('<button type="button">').text(R2OFFLOAD_MIG.retryAllLbl)
+						.css({fontSize:'0.75em', padding:'1px 8px', cursor:'pointer'})
+						.on('click', function(){
+							$retryAll.prop('disabled', true).text('…');
+							var ids = retryableIds.slice();
+							var lastData = null;
+							function next(){
+								if ( !ids.length ) { if(lastData){ render(lastData); } return; }
+								var id = ids.shift();
+								$.post(ajaxurl, { action:'r2offload_migrate_retry', nonce:R2OFFLOAD_MIG.nonce, attachment_id:id })
+									.done(function(res){ if(res && res.success){ lastData = res.data; } })
+									.always(next);
+							}
+							next();
+						});
+					$footer.append($retryAll);
+				}
+				$errs.empty().append($h).append($ul).append($footer).show();
 			} else {
 				$errs.hide().empty();
 			}
