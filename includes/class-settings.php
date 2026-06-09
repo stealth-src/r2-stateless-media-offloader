@@ -88,10 +88,20 @@ class Settings {
 		$stored = $this->stored();
 		if ( isset( $stored[ $key ] ) && '' !== $stored[ $key ] ) {
 			$value = (string) $stored[ $key ];
-			// Migration: blobs written by the old encrypt_secret() path start with
-			// 'r2enc:'. Decrypt transparently so existing installs keep working until
-			// the user next saves settings, which re-writes the value as plaintext.
-			return ( 'secret_key' === $key ) ? $this->decrypt( $value ) : $value;
+			if ( 'secret_key' === $key ) {
+				// Migration: blobs written by the old encrypt_secret() path start with
+				// 'r2enc:'. Decrypt transparently; if decryption fails (rotated salt)
+				// decrypt() returns '' — fall through so a R2OFFLOAD_SECRET_KEY constant
+				// can still serve as the active credential rather than leaving the plugin
+				// unconfigured.
+				$decrypted = $this->decrypt( $value );
+				if ( '' !== $decrypted ) {
+					return $decrypted;
+				}
+				// Decryption failed — fall through to constant / default below.
+			} else {
+				return $value;
+			}
 		}
 		// Constant fallback — used when no DB value has been entered.
 		if ( isset( $this->constants[ $key ] ) && defined( $this->constants[ $key ] ) ) {
