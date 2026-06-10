@@ -124,9 +124,9 @@ A few deliberate choices set this plugin apart from other offloaders:
   *every* file — the original and each generated size — is confirmed present in
   R2. A fresh upload can never emit a CDN URL that 404s (and get that 404
   edge-cached against the very URL it will serve from).
-- **Failure degrades safely, per mode.** In CDN mode an incomplete offload
+- **Failure degrades safely, per mode.** In CDN mode, an incomplete offload
   falls back to serving local copies until coverage completes. In Stateless
-  mode the attachment keeps serving from R2 and the missing piece retries —
+  mode, the attachment keeps serving from R2 and the missing piece retries —
   and local cleanup is deferred until the upload is *proven* complete, keeping
   regeneration sources (image/PDF originals) on disk exactly as long as
   WordPress might still need them.
