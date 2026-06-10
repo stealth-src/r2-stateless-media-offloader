@@ -1,0 +1,8 @@
+# Repo scaffolding excluded from distribution archives (git archive / release zips).
+# The zip a user installs contains only what WordPress needs.
+.gitattributes export-ignore
+.gitignore export-ignore
+.github export-ignore
+.env.example export-ignore
+bin export-ignore
+docker-compose.yml export-ignore

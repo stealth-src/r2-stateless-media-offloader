@@ -1,0 +1,37 @@
+name: Release
+
+# Builds the installable plugin zip and attaches it to the GitHub release.
+# The zip unpacks to a single r2-stateless-media-offload/ directory (the
+# layout WordPress expects) and excludes repo scaffolding via .gitattributes
+# export-ignore rules.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package plugin zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Build zip via git archive
+        run: |
+          git archive --format=zip \
+            --prefix=r2-stateless-media-offload/ \
+            -o "r2-stateless-media-offload-${{ github.event.release.tag_name }}.zip" \
+            "${{ github.event.release.tag_name }}"
+          unzip -l "r2-stateless-media-offload-${{ github.event.release.tag_name }}.zip" | tail -5
+
+      - name: Attach zip to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "r2-stateless-media-offload-${{ github.event.release.tag_name }}.zip" \
+            --clobber

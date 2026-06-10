@@ -4,7 +4,7 @@ Tags: cloudflare, r2, media offload, s3, cdn
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 0.2.1
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,6 +26,10 @@ Built for **stateless** operation: nothing persists on the server, making it ide
 * Universal migrator — move existing media to R2 from local disk, GCS (wp-stateless), or S3 (WP Offload Media)
 * Dual credentials — configure via the admin UI or wp-config.php constants
 * WP-CLI support for large-library migrations
+* Hook-based, not a stream wrapper — files stay real files while WordPress works on them, so every plugin and theme behaves exactly as on stock WordPress
+* Zero R2 traffic during image processing — thumbnails generate uninterrupted, then one batched upload ships everything
+* A URL never precedes its object — media URLs only switch to the CDN once every file is confirmed in R2
+* Safe exit — `wp r2offload pull` restores everything to local uploads before you deactivate
 
 == Installation ==
 
@@ -48,11 +52,21 @@ In CDN mode, local copies remain and WordPress serves them normally. URLs are re
 
 Yes. The migrator pulls each attachment from wherever it currently lives — local, GCS, or S3 — and uploads it to R2.
 
+= How is this different from other offload plugins? =
+
+Three design choices: it hooks WordPress's standard media events instead of replacing the uploads directory with a virtual stream-wrapper path (so plugins and themes that touch files directly keep working); it never talks to R2 while WordPress is generating thumbnails (one batched upload afterwards — much friendlier to small servers); and it only switches an attachment's URLs to the CDN after every file is confirmed present in R2, so a fresh upload can never render a broken CDN URL.
+
 = I already copied my media into R2 with another tool. Do I have to upload again? =
 
 No. If your media is already in R2 (for example, copied from Google Cloud Storage using Cloudflare's R2 data migration, also known as Super Slurper), just run the migration. Files already present in R2 are detected and registered without re-uploading — nothing is copied twice — and the plugin starts serving them from R2.
 
 == Changelog ==
+
+= 0.3.0 =
+* New uploads now offload in a single batched pass after WordPress finishes generating thumbnails — no R2 traffic interleaved with image processing. Much faster and more reliable on constrained hosts.
+* Media URLs only switch to R2 once every file is confirmed in the bucket — a fresh upload can never render a CDN URL that 404s (and get it edge-cached as broken).
+* Interrupted uploads self-heal: WordPress's post-process resume is fully supported via a shutdown backstop, and metadata-less programmatic inserts are offloaded too.
+* Stateless local cleanup is decided at request end against final state, is multisite blog-aware, and retains regeneration sources (image and PDF originals) until the upload is proven complete.
 
 = 0.2.1 =
 * Fixed: `wp r2offload reset` aborts with a clear error if a database delete fails mid-run (re-run to resume) instead of reporting success.

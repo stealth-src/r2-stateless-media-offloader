@@ -105,6 +105,35 @@ If your media is already in R2 — for example, copied straight from Google Clou
 
 The plugin records each attachment's R2 object key in post metadata and rewrites media URLs at render time. The WordPress database and post content are never altered. Because the path prefix is captured per attachment at upload time, changing it later affects only new uploads — existing media continues to resolve correctly.
 
+## Design & compatibility
+
+A few deliberate choices set this plugin apart from other offloaders:
+
+- **Hook-based, not a stream wrapper.** Some offloaders replace the uploads
+  directory with a virtual `s3://`-style path. That breaks any plugin or theme
+  that touches files directly — `realpath()`, `ZipArchive`, shelling out to a
+  binary, string-built paths. This plugin intercepts WordPress's standard media
+  hooks instead: files are real files on disk while WordPress works on them, so
+  **every plugin and theme behaves exactly as it would on stock WordPress**.
+- **Zero R2 traffic during image processing.** Thumbnail generation runs
+  uninterrupted — no network calls interleaved between resizes. The upload to
+  R2 happens once, as a single batched pass, after WordPress has finished all
+  image work. Fast hosts don't notice; constrained hosts (small containers,
+  shared CPU) notice a lot.
+- **A URL never precedes its object.** Media URLs only switch to the CDN after
+  *every* file — the original and each generated size — is confirmed present in
+  R2. A fresh upload can never emit a CDN URL that 404s (and get that 404
+  edge-cached against the very URL it will serve from).
+- **Failure degrades safely, per mode.** In CDN mode an incomplete offload
+  falls back to serving local copies until coverage completes. In Stateless
+  mode the attachment keeps serving from R2 and the missing piece retries —
+  and local cleanup is deferred until the upload is *proven* complete, keeping
+  regeneration sources (image/PDF originals) on disk exactly as long as
+  WordPress might still need them.
+- **A clean exit.** `wp r2offload pull` restores every offloaded file to local
+  uploads and clears the registration — deactivating never has to mean broken
+  media.
+
 ## Documentation
 
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — every setting and `wp-config` constant, the custom-domain requirement, the path-prefix gotcha, and CDN vs Stateless modes.

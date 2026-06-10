@@ -72,3 +72,27 @@ These are the only persistent traces; uninstall removes them (never the media).
   Cloudflare custom domain, delivery is free and only storage is billed.
 - **Render-time, reversible rewriting.** No database rewrite, no content
   mutation — deactivate and you're back to stock WordPress URLs.
+- **Hooks, not a stream wrapper.** The uploads directory stays a real
+  directory; the plugin intercepts the standard media hooks
+  (`add_attachment`, the metadata filters, `delete_attachment`). A virtual
+  `s3://`-style uploads path would force every `$editor->save()` through the
+  network mid-generation and break any code that touches files directly
+  (`realpath()`, `ZipArchive`, exec'd binaries). Hooks keep full ecosystem
+  compatibility and let uploads be batched (below).
+- **Uploads are deferred out of the generation window.** Sub-size generation
+  is detected from its start (`add_attachment` for new uploads,
+  `intermediate_image_sizes_advanced` for resumes); incremental metadata
+  saves are skipped and one batched upload runs on the final
+  `wp_generate_attachment_metadata` pass, with a shutdown backstop for
+  resume paths that never fire it. No R2 I/O between GD resizes.
+- **The synced flag is the URL switch, and it never lies.** `_r2offload_synced`
+  is only written when the original and every metadata-listed size are
+  confirmed in R2 — so the rewriter can never emit a CDN URL whose object
+  doesn't exist. Already-synced attachments upload inline per key (the filter
+  runs before the metadata write), preserving the same ordering during edits
+  and regeneration.
+- **Stateless cleanup is evidence-based.** Local copies are deleted at request
+  shutdown, only when the attachment ends the request synced; the shutdown
+  backstop (which cannot prove generation finished) cleans uploaded size
+  files but retains regeneration sources — image and PDF originals — until a
+  complete inline pass confirms completion.
