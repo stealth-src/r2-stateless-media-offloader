@@ -68,6 +68,10 @@ class Admin_Migration {
 			return;
 		}
 		wp_enqueue_script( 'jquery' );
+		// Bootstrap the error fields the Start confirmation keys off, so a
+		// click that lands before the first async status poll completes still
+		// confirms over a prior run's unresolved errors.
+		$boot = $this->runner->state();
 		wp_add_inline_script( 'jquery', 'window.R2OFFLOAD_MIG=' . wp_json_encode(
 			array(
 				'nonce'     => wp_create_nonce( self::AJAX_NONCE ),
@@ -81,6 +85,11 @@ class Admin_Migration {
 				'startWithErrors'   => __( 'There are unresolved errors from the previous run. Starting a new migration will clear them and begin from the beginning. Continue?', 'r2-stateless-media-offload' ),
 				'migrated'  => __( 'Migrated to R2', 'r2-stateless-media-offload' ),
 				'remaining' => __( 'remaining', 'r2-stateless-media-offload' ),
+				'bootState' => array(
+					'errored'       => (int) $boot['errored'],
+					'errors'        => (int) $boot['errors'],
+					'recent_errors' => array_values( array_map( 'strval', (array) $boot['recent_errors'] ) ),
+				),
 			)
 		) . ';' );
 		wp_add_inline_script( 'jquery', $this->inline_js() );
@@ -100,7 +109,10 @@ jQuery(function($){
 	var $log = $('#r2offload-mig-log');
 	var $logDetails = $('#r2offload-mig-log-details');
 	var polling = false;
-	var lastState = null; // Last rendered state — used by the Start confirmation.
+	// Last rendered state — used by the Start confirmation. Seeded from the
+	// server-side bootstrap so a Start click that lands before the first async
+	// status poll completes still sees a prior run's unresolved errors.
+	var lastState = R2OFFLOAD_MIG.bootState || null;
 	var pollFailCount = 0;        // Consecutive AJAX failures; triggers auto-pause after threshold.
 	var POLL_MAX_RETRIES    = 3;  // Auto-pause after this many consecutive poll failures.
 	var POLL_RETRY_DELAY_MS = 2000; // Delay between retry attempts (ms).
@@ -216,7 +228,16 @@ jQuery(function($){
 							var ids = retryableIds.slice();
 							var lastData = null;
 							function next(){
-								if ( !ids.length ) { if(lastData){ render(lastData); } return; }
+								if ( !ids.length ) {
+									if ( lastData ) { render(lastData); }
+									else {
+										// Every retry failed (lock contention, credentials, …)
+										// — restore the button instead of leaving it stuck
+										// disabled with an ellipsis until a reload.
+										$retryAll.prop('disabled', false).text(R2OFFLOAD_MIG.retryAllLbl);
+									}
+									return;
+								}
 								var id = ids.shift();
 								$.post(ajaxurl, { action:'r2offload_migrate_retry', nonce:R2OFFLOAD_MIG.nonce, attachment_id:id })
 									.done(function(res){ if(res && res.success){ lastData = res.data; } })

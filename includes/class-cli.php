@@ -468,45 +468,6 @@ class CLI {
 					$base_key = $settings->object_key( $relative_raw );
 				}
 
-				if ( empty( $objects ) ) {
-					// Legacy attachment (offloaded before the META_OBJECTS ownership
-					// manifest existed) — derive the expected keys from current
-					// metadata, mirroring Offloader::r2_keys_for(). Only OPTIONAL
-					// keys (edit-history backup sizes, which may never have been
-					// uploaded) are HEAD-filtered when missing; a REQUIRED key (the
-					// original or a size the current metadata references) missing
-					// from R2 fails the attachment so its meta is never cleared
-					// while a file the site serves can't be restored. The HEAD
-					// checks also run in dry-run when credentials allow, keeping
-					// its counts honest.
-					$derived = $this->derive_legacy_object_keys( $id, $base_key, ltrim( $relative_raw, '/' ) );
-					if ( null !== $client ) {
-						$missing_required = array();
-						foreach ( $derived['required'] as $key ) {
-							if ( ! $client->object_exists( $key ) ) {
-								$missing_required[] = $key;
-							}
-						}
-						if ( ! empty( $missing_required ) ) {
-							\WP_CLI::warning( sprintf(
-								'[#%d] legacy registration: %d required object(s) missing from R2 (%s) — R2 meta kept.',
-								$id,
-								count( $missing_required ),
-								implode( ', ', $missing_required )
-							) );
-							++$errors;
-							continue;
-						}
-						$derived['optional'] = array_values( array_filter( $derived['optional'], array( $client, 'object_exists' ) ) );
-					}
-					$objects = array_merge( $derived['required'], $derived['optional'] );
-					if ( empty( $objects ) ) {
-						\WP_CLI::warning( sprintf( '#%d: no objects found in R2 for legacy registration — skipping.', $id ) );
-						++$skipped;
-						continue;
-					}
-				}
-
 				// Map each key's basename back to its uploads-relative LOCAL path.
 				// Manifest keys can carry DIFFERENT prefixes (path_prefix may have
 				// changed between offloads), so stripping one inferred prefix would
@@ -517,6 +478,8 @@ class CLI {
 				// local path. enumerate_files() is the single source of truth for
 				// that mapping; backup sizes (absent from live metadata) are bare
 				// basenames in the original's directory, covered by the fallback.
+				// Built BEFORE the legacy branch so its preflight can consult the
+				// same local paths the restore loop will use.
 				$relative_clean = ltrim( $relative_raw, '/' );
 				$relative_dir   = dirname( $relative_clean );
 				$relative_dir   = ( '.' === $relative_dir ) ? '' : trailingslashit( $relative_dir );
@@ -543,6 +506,53 @@ class CLI {
 					) );
 					++$skipped;
 					continue;
+				}
+
+				if ( empty( $objects ) ) {
+					// Legacy attachment (offloaded before the META_OBJECTS ownership
+					// manifest existed) — derive the expected keys from current
+					// metadata, mirroring Offloader::r2_keys_for(). Only OPTIONAL
+					// keys (edit-history backup sizes, which may never have been
+					// uploaded) are HEAD-filtered when missing; a REQUIRED key (the
+					// original or a size the current metadata references) that is
+					// missing from R2 AND not already on disk fails the attachment
+					// so its meta is never cleared while a file the site serves
+					// can't be restored. A key whose local file already exists (CDN
+					// mode, or a re-run after a partial restore) is satisfied — the
+					// download loop would skip it via the same file_exists check.
+					// The HEAD checks also run in dry-run when credentials allow,
+					// keeping its counts honest.
+					$derived = $this->derive_legacy_object_keys( $id, $base_key, ltrim( $relative_raw, '/' ) );
+					if ( null !== $client ) {
+						$missing_required = array();
+						foreach ( $derived['required'] as $key ) {
+							$name      = wp_basename( $key );
+							$local_rel = isset( $local_map[ $name ] ) ? $local_map[ $name ] : $relative_dir . $name;
+							if ( file_exists( $uploads_basedir . $local_rel ) ) {
+								continue; // Already restored / never offloaded locally.
+							}
+							if ( ! $client->object_exists( $key ) ) {
+								$missing_required[] = $key;
+							}
+						}
+						if ( ! empty( $missing_required ) ) {
+							\WP_CLI::warning( sprintf(
+								'[#%d] legacy registration: %d required object(s) missing from R2 and not on disk (%s) — R2 meta kept.',
+								$id,
+								count( $missing_required ),
+								implode( ', ', $missing_required )
+							) );
+							++$errors;
+							continue;
+						}
+						$derived['optional'] = array_values( array_filter( $derived['optional'], array( $client, 'object_exists' ) ) );
+					}
+					$objects = array_merge( $derived['required'], $derived['optional'] );
+					if ( empty( $objects ) ) {
+						\WP_CLI::warning( sprintf( '#%d: no objects found in R2 for legacy registration — skipping.', $id ) );
+						++$skipped;
+						continue;
+					}
 				}
 
 				if ( $dry_run ) {
@@ -753,11 +763,24 @@ class CLI {
 			$attachments += count( $chunk );
 
 			$id_placeholders = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
-			$deleted        += (int) $wpdb->query( $wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders are literal %s/%d built from fixed-size arrays.
+			$rows            = $wpdb->query( $wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- placeholders are literal %s/%d built from fixed-size arrays.
 				"DELETE FROM {$wpdb->postmeta}
 				 WHERE meta_key IN ({$placeholders}) AND post_id IN ({$id_placeholders})",
 				array_merge( $meta_keys, array_map( 'intval', $chunk ) )
 			) );
+			if ( false === $rows ) {
+				// SQL error — abort honestly rather than advance past the chunk
+				// and print a success summary with its offload meta still in
+				// place. Re-running resumes here: the remaining rows still match.
+				\WP_CLI::error( sprintf(
+					'Database error deleting the postmeta chunk starting at post_id %d (%s). %d row(s) across %d attachment(s) were removed before the failure — re-run `wp r2offload reset` to finish.',
+					(int) $chunk[0],
+					$wpdb->last_error,
+					$deleted,
+					max( 0, $attachments - count( $chunk ) )
+				) );
+			}
+			$deleted += (int) $rows;
 
 			foreach ( $chunk as $post_id ) {
 				wp_cache_delete( (int) $post_id, 'post_meta' );
