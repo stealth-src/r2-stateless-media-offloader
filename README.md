@@ -139,6 +139,8 @@ A few deliberate choices set this plugin apart from other offloaders:
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — every setting and `wp-config` constant, the custom-domain requirement, the path-prefix gotcha, and CDN vs Stateless modes.
 - **[docs/MIGRATION.md](docs/MIGRATION.md)** — how the migrator decides per file (Uploaded / Updated / Adopted / Skipped), the real-world states, Pause/Resume/Stop, large-library/WP-CLI tips, and a cutover runbook from another offloader.
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the components, the per-attachment metadata, and the request lifecycle.
+- **[docs/HOOKS.md](docs/HOOKS.md)** — the filters the plugin exposes for developers (`r2offload_offload_on_upload`, `r2offload_mirror_deletes`, `r2offload_restore_to_uploads`, `r2offload_max_upload_bytes`).
+- **[docs/CLI.md](docs/CLI.md)** — the `wp r2offload` command reference (`test` / `sync` / `pull` / `reset`) with every flag.
 
 ## Development
 
