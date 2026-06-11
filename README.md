@@ -1,4 +1,4 @@
-# R2 Stateless Media Offload
+# R2 Stateless Media Offloader
 
 Offload your WordPress media library to **Cloudflare R2** — zero egress fees, S3-compatible, and stateless. A clean-room, open-source alternative to wp-stateless, built for R2.
 
@@ -35,7 +35,7 @@ This plugin offloads your media library to R2 and serves it from your own custom
 
 ## Installation
 
-1. Copy the plugin to `wp-content/plugins/r2-stateless-media-offload/`.
+1. Copy the plugin to `wp-content/plugins/r2-stateless-media-offloader/`.
 2. Activate it from the Plugins screen.
 3. Configure your R2 credentials under **Settings → R2 Offload**, or in `wp-config.php` (see below).
 4. Use **Test Connection** to verify, then run the migrator to offload existing media.

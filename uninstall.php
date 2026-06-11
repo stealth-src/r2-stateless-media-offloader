@@ -1,6 +1,6 @@
 <?php
 /**
- * Uninstall cleanup for R2 Stateless Media Offload.
+ * Uninstall cleanup for R2 Stateless Media Offloader.
  *
  * Runs only when the plugin is DELETED (not on deactivate). Removes the plugin's
  * own options and post-meta so nothing — including the encrypted Secret Access

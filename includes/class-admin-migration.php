@@ -50,8 +50,8 @@ class Admin_Migration {
 	public function add_menu_page() {
 		add_submenu_page(
 			'upload.php',
-			__( 'Migrate to R2', 'r2-stateless-media-offload' ),
-			__( 'Migrate to R2', 'r2-stateless-media-offload' ),
+			__( 'Migrate to R2', 'r2-stateless-media-offloader' ),
+			__( 'Migrate to R2', 'r2-stateless-media-offloader' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -75,16 +75,16 @@ class Admin_Migration {
 		wp_add_inline_script( 'jquery', 'window.R2OFFLOAD_MIG=' . wp_json_encode(
 			array(
 				'nonce'     => wp_create_nonce( self::AJAX_NONCE ),
-				'pause'     => __( 'Pause', 'r2-stateless-media-offload' ),
-				'resume'    => __( 'Resume', 'r2-stateless-media-offload' ),
-				'errorsLbl' => __( 'Recent errors', 'r2-stateless-media-offload' ),
-				'retryLbl'  => __( 'Retry', 'r2-stateless-media-offload' ),
-				'retryAllLbl'       => __( 'Retry All', 'r2-stateless-media-offload' ),
-				'clearAllLbl'       => __( 'Clear All Errors', 'r2-stateless-media-offload' ),
-				'clearAllConfirm'   => __( 'Clear all errors from the list?', 'r2-stateless-media-offload' ),
-				'startWithErrors'   => __( 'There are unresolved errors from the previous run. Starting a new migration will clear them and begin from the beginning. Continue?', 'r2-stateless-media-offload' ),
-				'migrated'  => __( 'Migrated to R2', 'r2-stateless-media-offload' ),
-				'remaining' => __( 'remaining', 'r2-stateless-media-offload' ),
+				'pause'     => __( 'Pause', 'r2-stateless-media-offloader' ),
+				'resume'    => __( 'Resume', 'r2-stateless-media-offloader' ),
+				'errorsLbl' => __( 'Recent errors', 'r2-stateless-media-offloader' ),
+				'retryLbl'  => __( 'Retry', 'r2-stateless-media-offloader' ),
+				'retryAllLbl'       => __( 'Retry All', 'r2-stateless-media-offloader' ),
+				'clearAllLbl'       => __( 'Clear All Errors', 'r2-stateless-media-offloader' ),
+				'clearAllConfirm'   => __( 'Clear all errors from the list?', 'r2-stateless-media-offloader' ),
+				'startWithErrors'   => __( 'There are unresolved errors from the previous run. Starting a new migration will clear them and begin from the beginning. Continue?', 'r2-stateless-media-offloader' ),
+				'migrated'  => __( 'Migrated to R2', 'r2-stateless-media-offloader' ),
+				'remaining' => __( 'remaining', 'r2-stateless-media-offloader' ),
 				'bootState' => array(
 					'errored'       => (int) $boot['errored'],
 					'errors'        => (int) $boot['errors'],
@@ -404,7 +404,7 @@ JS;
 		// "everything as to-upload" when R2 isn't reachable), so allow it to
 		// preview before credentials exist — matching `wp r2offload sync --dry-run`.
 		if ( 'dry-run' !== $mode && ! $this->settings->is_configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$this->respond( $this->runner->start( $mode ) );
@@ -434,11 +434,11 @@ JS;
 		// A stopped dry-run never needed credentials, so let it resume without
 		// them (matching ajax_start). Upload/verify still require configuration.
 		if ( 'dry-run' !== ( isset( $state['mode'] ) ? (string) $state['mode'] : '' ) && ! $this->settings->is_configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		if ( ! $this->runner->is_resumable( $state ) ) {
-			wp_send_json_error( array( 'message' => __( 'There is no stopped migration to resume.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'There is no stopped migration to resume.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$this->respond( $this->runner->resume() );
@@ -482,7 +482,7 @@ JS;
 		$this->guard();
 		$state = $this->runner->state();
 		if ( ! empty( $state['running'] ) ) {
-			wp_send_json_error( array( 'message' => __( 'Cannot retry while migration is running.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Cannot retry while migration is running.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		// Just after a Pause/Stop the run is no longer "running" but a batch
@@ -491,7 +491,7 @@ JS;
 		// must not start while the worker could be processing (possibly the
 		// same attachment). Same window the WP-CLI sync guard covers.
 		if ( $this->runner->has_active_worker() ) {
-			wp_send_json_error( array( 'message' => __( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		// A dry-run never needed credentials and the retry runs in the stored
@@ -499,18 +499,18 @@ JS;
 		// ajax_start()/ajax_resume(). Upload/verify/force retries still require
 		// configuration.
 		if ( 'dry-run' !== ( isset( $state['mode'] ) ? (string) $state['mode'] : '' ) && ! $this->settings->is_configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Configure R2 credentials first.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$raw_id        = isset( $_POST['attachment_id'] ) ? $_POST['attachment_id'] : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified in guard().
 		$attachment_id = (int) $raw_id;
 		if ( $attachment_id < 1 ) {
-			wp_send_json_error( array( 'message' => __( 'Invalid attachment ID.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Invalid attachment ID.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$post = get_post( $attachment_id );
 		if ( ! $post || 'attachment' !== $post->post_type || 'trash' === $post->post_status ) {
-			wp_send_json_error( array( 'message' => __( 'Attachment not found.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Attachment not found.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$result = $this->runner->retry_attachment( $attachment_id );
@@ -532,14 +532,14 @@ JS;
 		$this->guard();
 		$state = $this->runner->state();
 		if ( ! empty( $state['running'] ) ) {
-			wp_send_json_error( array( 'message' => __( 'Cannot clear errors while migration is running.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Cannot clear errors while migration is running.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		// Same paused-but-batch-still-finishing window as ajax_retry: a worker
 		// holding the lock may still be appending errors; clearing concurrently
 		// would race its state writes.
 		if ( $this->runner->has_active_worker() ) {
-			wp_send_json_error( array( 'message' => __( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		$this->respond( $this->runner->clear_errors() );
@@ -550,7 +550,7 @@ JS;
 	 */
 	private function guard() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'r2-stateless-media-offload' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'r2-stateless-media-offloader' ) ), 403 );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		check_ajax_referer( self::AJAX_NONCE, 'nonce' );

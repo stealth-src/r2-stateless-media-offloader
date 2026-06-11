@@ -53,8 +53,8 @@ class Admin_Settings {
 	 */
 	public function add_menu_page() {
 		add_options_page(
-			__( 'R2 Offload', 'r2-stateless-media-offload' ),
-			__( 'R2 Offload', 'r2-stateless-media-offload' ),
+			__( 'R2 Offload', 'r2-stateless-media-offloader' ),
+			__( 'R2 Offload', 'r2-stateless-media-offloader' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
@@ -71,7 +71,7 @@ class Admin_Settings {
 		$settings_link = sprintf(
 			'<a href="%s">%s</a>',
 			esc_url( add_query_arg( 'page', self::PAGE_SLUG, admin_url( 'options-general.php' ) ) ),
-			esc_html__( 'Settings', 'r2-stateless-media-offload' )
+			esc_html__( 'Settings', 'r2-stateless-media-offloader' )
 		);
 		array_unshift( $links, $settings_link );
 		return $links;
@@ -192,8 +192,8 @@ class Admin_Settings {
 		$data = array(
 			'action'  => self::AJAX_ACTION,
 			'nonce'   => wp_create_nonce( self::AJAX_ACTION ),
-			'testing' => __( 'Testing…', 'r2-stateless-media-offload' ),
-			'failed'  => __( 'Connection test failed.', 'r2-stateless-media-offload' ),
+			'testing' => __( 'Testing…', 'r2-stateless-media-offloader' ),
+			'failed'  => __( 'Connection test failed.', 'r2-stateless-media-offloader' ),
 		);
 		wp_add_inline_script( 'jquery', 'window.R2OFFLOAD=' . wp_json_encode( $data ) . ';' );
 		wp_add_inline_script( 'jquery', $this->inline_js() );
@@ -271,7 +271,7 @@ JS;
 	 */
 	public function ajax_test_connection() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'r2-stateless-media-offload' ) ), 403 );
+			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'r2-stateless-media-offloader' ) ), 403 );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 		check_ajax_referer( self::AJAX_ACTION, 'nonce' );
@@ -300,7 +300,7 @@ JS;
 		$probe->set_overrides( $overrides );
 
 		if ( ! $probe->is_configured() ) {
-			wp_send_json_error( array( 'message' => __( 'Enter your Account ID, Access Key ID, Secret Access Key and Bucket, then test.', 'r2-stateless-media-offload' ) ) );
+			wp_send_json_error( array( 'message' => __( 'Enter your Account ID, Access Key ID, Secret Access Key and Bucket, then test.', 'r2-stateless-media-offloader' ) ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
 
@@ -309,7 +309,7 @@ JS;
 			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
 			return; // wp_send_json_error already exits; explicit for static analysis.
 		}
-		wp_send_json_success( array( 'message' => __( 'Connected to R2 successfully.', 'r2-stateless-media-offload' ) ) );
+		wp_send_json_success( array( 'message' => __( 'Connected to R2 successfully.', 'r2-stateless-media-offloader' ) ) );
 	}
 
 	/**

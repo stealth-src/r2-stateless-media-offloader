@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name:       R2 Stateless Media Offload
- * Plugin URI:        https://github.com/stealths-labs/r2-stateless-media-offload
+ * Plugin Name:       R2 Stateless Media Offloader
+ * Plugin URI:        https://github.com/stealths-labs/r2-stateless-media-offloader
  * Description:       Offload your WordPress media library to Cloudflare R2 — zero egress fees, S3-compatible, stateless. A clean-room alternative to wp-stateless built for R2.
  * Version:           0.3.0
  * Requires at least: 6.0
@@ -10,7 +10,7 @@
  * Author URI:        https://github.com/wiiiimm
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       r2-stateless-media-offload
+ * Text Domain:       r2-stateless-media-offloader
  * Domain Path:       /languages
  *
  * @package R2Offload

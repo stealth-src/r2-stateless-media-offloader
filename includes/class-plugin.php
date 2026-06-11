@@ -99,7 +99,7 @@ final class Plugin {
 		if ( $this->settings->secret_decrypt_failed() ) {
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',
-				esc_html__( 'R2 Media Offload: the stored Secret Access Key could not be decrypted (the site\'s security keys may have changed). Re-enter it in Settings → R2 Offload.', 'r2-stateless-media-offload' )
+				esc_html__( 'R2 Media Offload: the stored Secret Access Key could not be decrypted (the site\'s security keys may have changed). Re-enter it in Settings → R2 Offload.', 'r2-stateless-media-offloader' )
 			);
 			return;
 		}
@@ -108,8 +108,8 @@ final class Plugin {
 		}
 		$stateless = 'stateless' === $this->settings->get( 'mode' );
 		$msg       = $stateless
-			? __( 'R2 Media Offload: no Custom Domain is set. In Stateless mode media is served only from R2, which needs a public custom domain — offloaded media will not load until you set one.', 'r2-stateless-media-offload' )
-			: __( 'R2 Media Offload: no Custom Domain is set, so media is still served from this server. Add a Cloudflare custom domain to serve from R2.', 'r2-stateless-media-offload' );
+			? __( 'R2 Media Offload: no Custom Domain is set. In Stateless mode media is served only from R2, which needs a public custom domain — offloaded media will not load until you set one.', 'r2-stateless-media-offloader' )
+			: __( 'R2 Media Offload: no Custom Domain is set, so media is still served from this server. Add a Cloudflare custom domain to serve from R2.', 'r2-stateless-media-offloader' );
 		printf(
 			'<div class="notice notice-%1$s"><p>%2$s</p></div>',
 			esc_attr( $stateless ? 'error' : 'warning' ),

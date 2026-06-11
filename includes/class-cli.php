@@ -14,7 +14,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 }
 
 /**
- * Manage R2 Stateless Media Offload from the command line.
+ * Manage R2 Stateless Media Offloader from the command line.
  */
 class CLI {
 

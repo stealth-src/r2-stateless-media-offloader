@@ -53,7 +53,7 @@ class R2_Client {
 				'r2offload_connection_failed',
 				sprintf(
 					/* translators: 1: HTTP status, 2: response body */
-					__( 'R2 returned HTTP %1$d: %2$s', 'r2-stateless-media-offload' ),
+					__( 'R2 returned HTTP %1$d: %2$s', 'r2-stateless-media-offloader' ),
 					(int) $code,
 					wp_strip_all_tags( wp_remote_retrieve_body( $response ) )
 				)
@@ -73,7 +73,7 @@ class R2_Client {
 	 */
 	public function upload_file( $local_path, $key, $content_type = '', $extra_headers = array() ) {
 		if ( ! is_readable( $local_path ) ) {
-			return new \WP_Error( 'r2offload_file_unreadable', __( 'Local file not readable.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_file_unreadable', __( 'Local file not readable.', 'r2-stateless-media-offloader' ) );
 		}
 
 		// NOTE: reads the whole file into memory — the WordPress HTTP API has no
@@ -90,7 +90,7 @@ class R2_Client {
 				// cap — refuse rather than risk an unbounded in-memory read.
 				return new \WP_Error(
 					'r2offload_filesize_unknown',
-					__( 'Unable to determine file size to enforce the upload limit.', 'r2-stateless-media-offload' )
+					__( 'Unable to determine file size to enforce the upload limit.', 'r2-stateless-media-offloader' )
 				);
 			}
 			if ( $size > $max_bytes ) {
@@ -98,7 +98,7 @@ class R2_Client {
 					'r2offload_file_too_large',
 					sprintf(
 						/* translators: 1: file size in bytes, 2: limit in bytes */
-						__( 'File is %1$d bytes, above the in-memory upload limit of %2$d bytes. Increase the r2offload_max_upload_bytes filter once multipart streaming is available, or exclude this file.', 'r2-stateless-media-offload' ),
+						__( 'File is %1$d bytes, above the in-memory upload limit of %2$d bytes. Increase the r2offload_max_upload_bytes filter once multipart streaming is available, or exclude this file.', 'r2-stateless-media-offloader' ),
 						(int) $size,
 						$max_bytes
 					)
@@ -108,7 +108,7 @@ class R2_Client {
 
 		$body = file_get_contents( $local_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		if ( false === $body ) {
-			return new \WP_Error( 'r2offload_file_read_failed', __( 'Unable to read local file.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_file_read_failed', __( 'Unable to read local file.', 'r2-stateless-media-offloader' ) );
 		}
 
 		if ( '' === $content_type ) {
@@ -118,7 +118,7 @@ class R2_Client {
 
 		$headers  = array_merge( array( 'Content-Type' => $content_type ), $extra_headers );
 		$response = $this->request( 'PUT', '/' . ltrim( $key, '/' ), array(), $body, $headers );
-		return $this->expect_2xx( $response, 'r2offload_upload_failed', __( 'Upload failed', 'r2-stateless-media-offload' ) );
+		return $this->expect_2xx( $response, 'r2offload_upload_failed', __( 'Upload failed', 'r2-stateless-media-offloader' ) );
 	}
 
 	/**
@@ -136,7 +136,7 @@ class R2_Client {
 		if ( 204 === $code || 200 === $code ) {
 			return true;
 		}
-		return new \WP_Error( 'r2offload_delete_failed', sprintf( /* translators: %d: HTTP status */ __( 'Delete failed HTTP %d', 'r2-stateless-media-offload' ), $code ) . $this->error_body_detail( $response ) );
+		return new \WP_Error( 'r2offload_delete_failed', sprintf( /* translators: %d: HTTP status */ __( 'Delete failed HTTP %d', 'r2-stateless-media-offloader' ), $code ) . $this->error_body_detail( $response ) );
 	}
 
 	/**
@@ -203,7 +203,7 @@ class R2_Client {
 				'r2offload_list_failed',
 				sprintf(
 					/* translators: 1: HTTP status, 2: response body */
-					__( 'R2 returned HTTP %1$d: %2$s', 'r2-stateless-media-offload' ),
+					__( 'R2 returned HTTP %1$d: %2$s', 'r2-stateless-media-offloader' ),
 					(int) $code,
 					wp_strip_all_tags( wp_remote_retrieve_body( $response ) )
 				)
@@ -219,7 +219,7 @@ class R2_Client {
 			LIBXML_NOCDATA | LIBXML_NONET
 		);
 		if ( false === $xml ) {
-			return new \WP_Error( 'r2offload_parse_error', __( 'Unable to parse R2 list response.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_parse_error', __( 'Unable to parse R2 list response.', 'r2-stateless-media-offloader' ) );
 		}
 
 		$keys = array();
@@ -254,7 +254,7 @@ class R2_Client {
 	public function download_object( $key, $local_path ) {
 		$dir = dirname( $local_path );
 		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
-			return new \WP_Error( 'r2offload_mkdir_failed', sprintf( /* translators: %s: directory path */ __( 'Could not create the directory %s for the downloaded object.', 'r2-stateless-media-offload' ), $dir ) );
+			return new \WP_Error( 'r2offload_mkdir_failed', sprintf( /* translators: %s: directory path */ __( 'Could not create the directory %s for the downloaded object.', 'r2-stateless-media-offloader' ), $dir ) );
 		}
 
 		// Stream the body straight to disk so a large object (e.g. video in a
@@ -278,11 +278,11 @@ class R2_Client {
 			if ( file_exists( $local_path ) ) {
 				wp_delete_file( $local_path );
 			}
-			return new \WP_Error( 'r2offload_download_failed', sprintf( /* translators: %d: HTTP status */ __( 'Download failed HTTP %d', 'r2-stateless-media-offload' ), $code ) );
+			return new \WP_Error( 'r2offload_download_failed', sprintf( /* translators: %d: HTTP status */ __( 'Download failed HTTP %d', 'r2-stateless-media-offloader' ), $code ) );
 		}
 
 		if ( ! file_exists( $local_path ) ) {
-			return new \WP_Error( 'r2offload_write_failed', __( 'Could not write downloaded object to disk.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_write_failed', __( 'Could not write downloaded object to disk.', 'r2-stateless-media-offloader' ) );
 		}
 
 		// Guard against a truncated download: compare against Content-Length.
@@ -303,7 +303,7 @@ class R2_Client {
 		$actual_size   = filesize( $local_path );
 		if ( '' === $encoding && null !== $expected_size && false !== $actual_size && $expected_size !== (int) $actual_size ) {
 			wp_delete_file( $local_path );
-			return new \WP_Error( 'r2offload_download_incomplete', __( 'Downloaded object was incomplete.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_download_incomplete', __( 'Downloaded object was incomplete.', 'r2-stateless-media-offloader' ) );
 		}
 		return true;
 	}
@@ -373,7 +373,7 @@ class R2_Client {
 	 */
 	private function request( $method, $path, $query_params = array(), $body = '', $extra_headers = array(), $stream_to = '' ) {
 		if ( ! $this->settings->is_configured() ) {
-			return new \WP_Error( 'r2offload_not_configured', __( 'R2 credentials are not configured.', 'r2-stateless-media-offload' ) );
+			return new \WP_Error( 'r2offload_not_configured', __( 'R2 credentials are not configured.', 'r2-stateless-media-offloader' ) );
 		}
 
 		$host   = $this->host();

@@ -1,4 +1,4 @@
-=== R2 Stateless Media Offload ===
+=== R2 Stateless Media Offloader ===
 Contributors: wiiiimm
 Tags: cloudflare, r2, media offload, s3, cdn
 Requires at least: 6.0
@@ -33,7 +33,7 @@ Built for **stateless** operation: nothing persists on the server, making it ide
 
 == Installation ==
 
-1. Upload the plugin to `/wp-content/plugins/r2-stateless-media-offload/`.
+1. Upload the plugin to `/wp-content/plugins/r2-stateless-media-offloader/`.
 2. Activate it through the Plugins menu.
 3. Configure your R2 credentials in **Settings → R2 Offload**, or via `wp-config.php` constants.
 4. Use **Test Connection** to verify, then run the migrator to offload existing media.

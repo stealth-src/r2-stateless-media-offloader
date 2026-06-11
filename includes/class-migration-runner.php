@@ -307,7 +307,7 @@ class Migration_Runner {
 			// the UI render this as a completed retry.
 			return new \WP_Error(
 				'r2offload_retry_locked',
-				__( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offload' )
+				__( 'A migration batch is still finishing — try again in a moment.', 'r2-stateless-media-offloader' )
 			);
 		}
 		try {
@@ -749,7 +749,7 @@ class Migration_Runner {
 					$next['finished_at'] = time();
 					$next['last_error']  = sprintf(
 						/* translators: 1: number of failures, 2: last error message */
-						__( 'Migration aborted after %1$d consecutive batch failures. Last error: %2$s', 'r2-stateless-media-offload' ),
+						__( 'Migration aborted after %1$d consecutive batch failures. Last error: %2$s', 'r2-stateless-media-offloader' ),
 						(int) $state['fail_streak'],
 						(string) $state['last_error']
 					);

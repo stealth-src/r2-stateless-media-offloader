@@ -1,4 +1,4 @@
-# Local development environment for r2-stateless-media-offload.
+# Local development environment for r2-stateless-media-offloader.
 # Spins up WordPress + MariaDB with the plugin mounted, R2 credentials
 # injected from a local (gitignored) .env file. See .env.example.
 #
@@ -36,7 +36,7 @@ services:
       R2OFFLOAD_CUSTOM_DOMAIN: ${R2OFFLOAD_CUSTOM_DOMAIN:-}
     volumes:
       - wp_core:/var/www/html
-      - .:/var/www/html/wp-content/plugins/r2-stateless-media-offload
+      - .:/var/www/html/wp-content/plugins/r2-stateless-media-offloader
 
   wpcli:
     image: wordpress:cli-php8.3
@@ -55,7 +55,7 @@ services:
       R2OFFLOAD_CUSTOM_DOMAIN: ${R2OFFLOAD_CUSTOM_DOMAIN:-}
     volumes:
       - wp_core:/var/www/html
-      - .:/var/www/html/wp-content/plugins/r2-stateless-media-offload
+      - .:/var/www/html/wp-content/plugins/r2-stateless-media-offloader
     user: "33:33"
 
 volumes:

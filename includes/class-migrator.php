@@ -160,7 +160,7 @@ class Migrator {
 
 		$attachment_id = (int) $attachment_id;
 		if ( $attachment_id <= 0 ) {
-			$result['errors'][] = __( 'Invalid attachment ID.', 'r2-stateless-media-offload' );
+			$result['errors'][] = __( 'Invalid attachment ID.', 'r2-stateless-media-offloader' );
 			return $result;
 		}
 
@@ -168,7 +168,7 @@ class Migrator {
 		if ( '' === $relative ) {
 			$result['errors'][] = sprintf(
 				/* translators: %d: attachment ID */
-				__( 'Attachment %d has no _wp_attached_file.', 'r2-stateless-media-offload' ),
+				__( 'Attachment %d has no _wp_attached_file.', 'r2-stateless-media-offloader' ),
 				$attachment_id
 			);
 			return $result;
@@ -515,7 +515,7 @@ class Migrator {
 			} else {
 				$result['errors'][] = sprintf(
 					/* translators: %s: object key */
-					__( 'Missing in R2: %s', 'r2-stateless-media-offload' ),
+					__( 'Missing in R2: %s', 'r2-stateless-media-offloader' ),
 					$key
 				);
 			}
@@ -579,7 +579,7 @@ class Migrator {
 			if ( '' === $url ) {
 				$result['errors'][] = sprintf(
 					/* translators: %s: object key */
-					__( '%s: no source URL', 'r2-stateless-media-offload' ),
+					__( '%s: no source URL', 'r2-stateless-media-offloader' ),
 					$key
 				);
 				return;
@@ -666,7 +666,7 @@ class Migrator {
 		if ( '' === $url ) {
 			$result['errors'][] = sprintf(
 				/* translators: %s: object key */
-				__( '%s: no source URL', 'r2-stateless-media-offload' ),
+				__( '%s: no source URL', 'r2-stateless-media-offloader' ),
 				$key
 			);
 			return null;
@@ -692,7 +692,7 @@ class Migrator {
 		if ( $code < 200 || $code >= 300 ) {
 			$result['errors'][] = sprintf(
 				/* translators: 1: object key, 2: HTTP status */
-				__( '%1$s: HEAD returned HTTP %2$d', 'r2-stateless-media-offload' ),
+				__( '%1$s: HEAD returned HTTP %2$d', 'r2-stateless-media-offloader' ),
 				$key,
 				$code
 			);
@@ -930,7 +930,7 @@ class Migrator {
 			}
 			return new \WP_Error(
 				'r2offload_download_failed',
-				__( 'Downloaded tempfile is not readable.', 'r2-stateless-media-offload' )
+				__( 'Downloaded tempfile is not readable.', 'r2-stateless-media-offloader' )
 			);
 		}
 		return $tmp;
