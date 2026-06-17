@@ -246,6 +246,16 @@ class Local_Fallback {
 	 * @return array{download_to:string,publish_to:string}
 	 */
 	private function restore_target( $local_path ) {
+		// wp_tempnam() is defined in wp-admin/includes/file.php, which is NOT
+		// loaded on front-end requests. This restore path runs during front-end
+		// image rendering (via the get_attached_file filter), so load the file
+		// on demand — otherwise the unqualified call resolves to the namespaced
+		// R2Offload\wp_tempnam() (and falls back to a non-existent global),
+		// throwing a fatal that takes down the whole page.
+		if ( ! function_exists( 'wp_tempnam' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+
 		$basename = wp_basename( $local_path );
 		$dir      = dirname( $local_path );
 
@@ -257,7 +267,7 @@ class Local_Fallback {
 		// Anything outside uploads falls back to the system temp dir.
 		$use_uploads = apply_filters( 'r2offload_restore_to_uploads', true, $local_path );
 		if ( $use_uploads && $this->within_uploads_basedir( $local_path ) && '.' !== $dir && wp_mkdir_p( $dir ) && wp_is_writable( $dir ) ) {
-			$tmp = wp_tempnam( $basename, $dir ); // Unique temp file IN the canonical directory.
+			$tmp = \wp_tempnam( $basename, $dir ); // Unique temp file IN the canonical directory.
 			if ( $tmp ) {
 				return array( 'download_to' => $tmp, 'publish_to' => $local_path );
 			}
@@ -266,7 +276,7 @@ class Local_Fallback {
 		// Read-only / ephemeral uploads dir, outside uploads, or filtered off:
 		// system temp dir. Reads work; derivatives written off this path are not
 		// captured (SWR-332).
-		$tmp = (string) wp_tempnam( $basename );
+		$tmp = (string) \wp_tempnam( $basename );
 		return array( 'download_to' => $tmp, 'publish_to' => $tmp );
 	}
 
